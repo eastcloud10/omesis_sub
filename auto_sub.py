@@ -3,6 +3,10 @@ import numpy as np
 import cv2
 import time
 import shutil
+import ctypes
+
+#修改终端标题
+ctypes.windll.kernel32.SetConsoleTitleW("omesis字幕轴自动生成")
 
 EMPTY_ASS=".\\empty.ass"
 OUTPUT_ASS=".\\omesis_sub.ass"
@@ -131,6 +135,7 @@ while(cap.isOpened()):
     if frame_count%600 == 0:        
         PROGRAM_currenttime=time.time()
         print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
+        ctypes.windll.kernel32.SetConsoleTitleW("(%d)omesis字幕轴自动生成"%(100*frame_count/TOTAL_FRAMES))
         print("已处理帧数： %d"%frame_count)
         print("已用时间 %d秒"%(PROGRAM_currenttime-PROGRAM_starttime))
         print("每60帧处理用时 %.2f秒"%(60*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count))
@@ -152,6 +157,8 @@ for st in RIOstarttimelist:
         writetimestamp(st,("%02d:%06.3f"%(minute,second+0.01))[0:8],"rio")
 
 print("\n处理完成")
+ctypes.windll.kernel32.SetConsoleTitleW("(处理完成)omesis字幕轴自动生成")
+input('按Enter结束。。。')
     
 #释放资源
 cap.release()
