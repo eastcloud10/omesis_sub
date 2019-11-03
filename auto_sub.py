@@ -39,7 +39,7 @@ PROGRAM_starttime=time.time()
 cap = cv2.VideoCapture(VIDEO_FILENAME,cv2.CAP_FFMPEG) #打开视频
 print('成功读取视频')
 FPS=cap.get(cv2.CAP_PROP_FPS)                      #帧率
-TOTAL_FRAMES=cap.get(CAP_PROP_FRAME_COUNT)          #总帧数
+TOTAL_FRAMES=cap.get(cv2.CAP_PROP_FRAME_COUNT)          #总帧数
 WIDTH=cap.get(cv2.CAP_PROP_FRAME_WIDTH)
 HEIGHT=cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 frame_count=0
@@ -135,7 +135,7 @@ while(cap.isOpened()):
     if frame_count%600 == 0:        
         PROGRAM_currenttime=time.time()
         print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
-        ctypes.windll.kernel32.SetConsoleTitleW("(%d)omesis字幕轴自动生成"%(100*frame_count/TOTAL_FRAMES))
+        ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)omesis字幕轴自动生成"%(100*frame_count/TOTAL_FRAMES))
         print("已处理帧数： %d"%frame_count)
         print("已用时间 %d秒"%(PROGRAM_currenttime-PROGRAM_starttime))
         print("每60帧处理用时 %.2f秒"%(60*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count))
