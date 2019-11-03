@@ -2,16 +2,20 @@
 import numpy as np
 import cv2
 import time
+import shutil
+
+EMPTY_ASS=".\\empty.ass"
+OUTPUT_ASS=".\\omesis_sub.ass"
+VIDEO_FILENAME='video.mp4'
 
 #向ass中写入时间轴数据。样式为ray_sub和rio_sub
 def writetimestamp(starttimestring,endtimestring,name='ray'):
-    with open('empty.ass','a') as f:
+    with open(OUTPUT_ASS,'a') as f:
         f.write("Dialogue: 0,0:"+starttimestring+",0:"+endtimestring+","+name+"_sub"+",,0,0,0,,omesis\n")
     
 #通过opencv显示图像取色        
 #RIO R 52 G 138 B 216
 #RAY R 226 G 76 B 93
-
 #通过颜色判断字幕的存在
 #颜色空间，每通道上下5
 def RIO_count(R,G,B):
@@ -20,7 +24,7 @@ def RIO_count(R,G,B):
 def RAY_count(R,G,B):
     return (R>=221)&(R<=231)&(G>=71)&(G<=81)&(B>=88)&(B<=98)
     
-#判定常数，可根据分辨率确定
+#字幕（出现/消失）像素判定数，可根据分辨率确定
 SUB_START_NUM = 5000
 SUB_END_NUM   = 5000
 
@@ -28,9 +32,10 @@ SUB_END_NUM   = 5000
 PROGRAM_starttime=time.time() 
 
 #载入视频
-cap = cv2.VideoCapture('video.mp4',cv2.CAP_FFMPEG) #打开视频
+cap = cv2.VideoCapture(VIDEO_FILENAME,cv2.CAP_FFMPEG) #打开视频
 print('成功读取视频')
 FPS=cap.get(cv2.CAP_PROP_FPS)                      #帧率
+TOTAL_FRAMES=cap.get(CAP_PROP_FRAME_COUNT)          #总帧数
 WIDTH=cap.get(cv2.CAP_PROP_FRAME_WIDTH)
 HEIGHT=cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 frame_count=0
@@ -46,6 +51,9 @@ RIO_dis=np.zeros(1920*1080)
 #待写入
 RAYstarttimelist=[]
 RIOstarttimelist=[]
+
+#初始化空ass文件
+shutil.copyfile(EMPTY_ASS,OUTPUT_ASS)
 
 #进度条
 print("----------")
@@ -105,7 +113,7 @@ while(cap.isOpened()):
         second=((frame_count-1)/FPS)%60
         RAYstarttimelist.append(("%02d:%06.3f"%(minute,second))[0:8])   #起始时间点向下取整(0.01s)
     
-    #RAY结束
+    #RIO起始
     if (np.sum(RIO_new)>SUB_START_NUM) & (np.sum(RIO_new)/(np.sum(current_RIO)+1) > 0.5):
         minute=((frame_count-1)/FPS)/60
         second=((frame_count-1)/FPS)%60
@@ -122,20 +130,30 @@ while(cap.isOpened()):
     #每600帧（约10秒）显示一次进度
     if frame_count%600 == 0:        
         PROGRAM_currenttime=time.time()
-        print("Total frames processed so far: %d"%frame_count)
-        print("Total time used so far= %d"%(PROGRAM_currenttime-PROGRAM_starttime))
-        print("For every 60 frames, time spend= %.2f"%(60*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count))
-        print("----------")
+        print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
+        print("已处理帧数： %d"%frame_count)
+        print("已用时间 %d秒"%(PROGRAM_currenttime-PROGRAM_starttime))
+        print("每60帧处理用时 %.2f秒"%(60*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count))
+        time_left = (TOTAL_FRAMES - frame_count)*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count
+        print("预计剩余时间：%d分%d秒"%(time_left/60,time_left%60))
+        print("----------") #进度条
 
-#收尾可能没结束的start
+#收尾可能没结束的字幕
 for st in RAYstarttimelist:
-    writetimestamp(st,"%02d:%05.2f"%(minute,second),"ray")
+    minute=((frame_count-2)/FPS)/60 #结束帧在前一帧
+    second=((frame_count-2)/FPS)%60
+    for st in RAYstarttimelist:
+        writetimestamp(st,("%02d:%06.3f"%(minute,second+0.01))[0:8],"ray")
+
 for st in RIOstarttimelist:
-    writetimestamp(st,"%02d:%05.2f"%(minute,second),"rio")
+    minute=((frame_count-2)/FPS)/60
+    second=((frame_count-2)/FPS)%60
+    for st in RIOstarttimelist:
+        writetimestamp(st,("%02d:%06.3f"%(minute,second+0.01))[0:8],"rio")
+
+print("\n处理完成")
     
 #释放资源
 cap.release()
 cv2.destroyAllWindows()
-
-
 
