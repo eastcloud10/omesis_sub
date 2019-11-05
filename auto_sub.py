@@ -23,10 +23,10 @@ def writetimestamp(starttimestring,endtimestring,name='ray'):
 #通过颜色判断字幕的存在
 #颜色空间，每通道上下5
 def RIO_count(R,G,B):
-    return (R>=49)&(R<=55)&(G>=135)&(G<=141)&(B>=213)&(B<=219)
+    return (B>=213)&(R<=55)&(G>=135)&(G<=141)&(R>=49)&(B<=219)
 
 def RAY_count(R,G,B):
-    return (R>=221)&(R<=231)&(G>=71)&(G<=81)&(B>=88)&(B<=98)
+    return (R>=221)&(G<=81)&(B<=98)&(B>=88)&(G>=71)&(R<=231)
     
 #字幕（出现/消失）像素判定数，可根据分辨率确定
 SUB_START_NUM = 5000
@@ -47,6 +47,8 @@ frame_count=0
 #初始化空判定
 previous_RAY=np.zeros(1920*1080)
 previous_RIO=np.zeros(1920*1080)
+previous_RAY_sum=0
+previous_RIO_sum=0
 RAY_new=np.zeros(1920*1080)
 RIO_new=np.zeros(1920*1080)
 RAY_dis=np.zeros(1920*1080)
@@ -79,15 +81,19 @@ while(cap.isOpened()):
     B,G,R=img.transpose(2,0,1).reshape(3,-1)
     current_RIO = RIO_count(R,G,B)
     current_RAY = RAY_count(R,G,B)
+    current_RAY_sum = np.sum(current_RAY)
+    current_RIO_sum = np.sum(current_RIO)
     
     #调试
     #cv2.imshow('omesis',img)
 
     #判定项
-    RAY_new=(previous_RAY==False)&(current_RAY==True)
-    RIO_new=(previous_RIO==False)&(current_RIO==True)
-    RAY_dis=(previous_RAY==True)&(current_RAY==False)
-    RIO_dis=(previous_RIO==True)&(current_RIO==False)
+    RAY_new=(current_RAY==True)&(previous_RAY==False)
+    RIO_new=(current_RIO==True)&(previous_RIO==False)
+    RAY_new_sum=np.sum(RAY_new)
+    RIO_new_sum=np.sum(RIO_new)
+    RAY_dis_sum=previous_RAY_sum+RAY_new_sum-current_RAY_sum
+    RIO_dis_sum=previous_RIO_sum+RIO_new_sum-current_RIO_sum
     
     #调试
     #print('time:%02d:%05.2f, RIO mask:%d, RAY mask:%d'%(minute,second,np.sum(current_RIO),np.sum(current_RAY)))
@@ -96,7 +102,7 @@ while(cap.isOpened()):
     
     #判定起始与终止. 先判终止后判开始避免秒瞬间结束
     #RAY结束
-    if (np.sum(RAY_dis)>SUB_END_NUM) & (np.sum(RAY_dis)/(np.sum(previous_RAY)+1) > 0.5):        #超过一半消失则判定为结束
+    if (RAY_dis_sum>SUB_END_NUM) & (RAY_dis_sum/(previous_RAY_sum+1) > 0.5):        #超过一半消失则判定为结束
         minute=((frame_count-2)/FPS)/60 #结束帧在前一帧
         second=((frame_count-2)/FPS)%60
         for st in RAYstarttimelist:
@@ -104,7 +110,7 @@ while(cap.isOpened()):
         RAYstarttimelist=[] #清空列表，待复用
         
     #RIO结束    
-    if (np.sum(RIO_dis)>SUB_END_NUM) & (np.sum(RIO_dis)/(np.sum(previous_RIO)+1) > 0.5):
+    if (RIO_dis_sum>SUB_END_NUM) & (RIO_dis_sum/(previous_RIO_sum+1) > 0.5):
         minute=((frame_count-2)/FPS)/60
         second=((frame_count-2)/FPS)%60
         for st in RIOstarttimelist:
@@ -112,13 +118,13 @@ while(cap.isOpened()):
         RIOstarttimelist=[]
     
     #RAY起始
-    if (np.sum(RAY_new)>SUB_START_NUM) & (np.sum(RAY_new)/(np.sum(current_RAY)+1) > 0.5):       #超过一半为新出现则判定为新行
+    if (RAY_new_sum>SUB_START_NUM) & (RAY_new_sum/(current_RAY_sum+1) > 0.5):       #超过一半为新出现则判定为新行
         minute=((frame_count-1)/FPS)/60 #起始帧在本帧
         second=((frame_count-1)/FPS)%60
         RAYstarttimelist.append(("%02d:%06.3f"%(minute,second))[0:8])   #起始时间点向下取整(0.01s)
     
     #RIO起始
-    if (np.sum(RIO_new)>SUB_START_NUM) & (np.sum(RIO_new)/(np.sum(current_RIO)+1) > 0.5):
+    if (RIO_new_sum>SUB_START_NUM) & ((RIO_new_sum)/(current_RIO_sum+1) > 0.5):
         minute=((frame_count-1)/FPS)/60
         second=((frame_count-1)/FPS)%60
         RIOstarttimelist.append(("%02d:%06.3f"%(minute,second))[0:8])    
@@ -126,6 +132,8 @@ while(cap.isOpened()):
     #处理结束，当前帧 存为 上一帧
     previous_RAY=current_RAY
     previous_RIO=current_RIO
+    previous_RAY_sum=current_RAY_sum
+    previous_RIO_sum=current_RIO_sum
   
     #调试
     #if cv2.waitKey(1) & 0xFF == ord('q'): 
