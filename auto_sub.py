@@ -6,6 +6,10 @@ import time
 import shutil
 import ctypes
 
+#从帧数计算（该帧向前取整）的时间，返回的是字符串，第一帧为00:00.00
+def frame_to_time(fc,FPS):
+    return ("%02d:%06.3f"%(((fc-1)/FPS)/60,((fc-1)/FPS)%60))[0:8]
+
 #初始化空ass文件
 def initial_ass(ASS_FILENAME,VIDEO_FILENAME):    
     ASS_BASE="""[Script Info]
@@ -49,7 +53,7 @@ def initial_ass(ASS_FILENAME,VIDEO_FILENAME):
     Comment: 1,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\pos($sx,$sy)\bord12\3c&HD98936&\1c&HD98936&\clip(!$lleft-20!,$lmiddle,!$lright+20!,!$lbottom+20!)}
     """%(VIDEO_FILENAME,VIDEO_FILENAME)
     with open(ASS_FILENAME,"w",encoding='utf-8') as f:
-        f.write(u'\ufeff')
+        f.write(u'\ufeff') #防Aegisub乱码
         f.write(ASS_BASE)
     
 #向ass中写入时间轴数据。样式为ray字幕和rio字幕
@@ -61,7 +65,9 @@ if __name__ == "__main__":
     #修改终端标题
     ctypes.windll.kernel32.SetConsoleTitleW("omesis字幕轴自动生成")
 
-    VIDEO_FILENAME = input('请输入视频文件名(含扩展名)：\n')
+    VIDEO_FILENAME = input('请输入视频文件名：\n')
+    if VIDEO_FILENAME[-4:] != '.mp4':
+        VIDEO_FILENAME = VIDEO_FILENAME+'.mp4'
     ASS_FILENAME = VIDEO_FILENAME[:-4]+'.ass'
     initial_ass(ASS_FILENAME,VIDEO_FILENAME)
         
@@ -115,52 +121,37 @@ if __name__ == "__main__":
         B,G,R=img.transpose(2,0,1).reshape(3,-1)
         
         #通过颜色判断字幕的存在,用opencv显示图像取色        
-        #RIO R 52 G 138 B 216
-        #RAY R 226 G 76 B 93
-        current_RIO = (B>=213)&(R<=55)&(G>=135)&(G<=141)&(R>=49)&(B<=219)
-        current_RAY = (R>=221)&(G<=81)&(B<=98)&(B>=88)&(G>=71)&(R<=231)
+        #RIO R 52 G 138 B 216                
+        current_RAY = (G<=81)&(B<=98)&(R<=231)&(R>=221)&(B>=88)&(G>=71)
         current_RAY_sum = np.sum(current_RAY)
-        current_RIO_sum = np.sum(current_RIO)
-        
-        #调试
-        #cv2.imshow('omesis',img)
-
-        #判定项
-        RAY_new=(current_RAY==True)&(previous_RAY==False)
-        RIO_new=(current_RIO==True)&(previous_RIO==False)
-        RAY_new_sum=np.sum(RAY_new)
-        RIO_new_sum=np.sum(RIO_new)
+        RAY_new=(current_RAY==True)&(previous_RAY==False)        
+        RAY_new_sum=np.sum(RAY_new)        
         RAY_dis_sum=previous_RAY_sum+RAY_new_sum-current_RAY_sum
-        RIO_dis_sum=previous_RIO_sum+RIO_new_sum-current_RIO_sum
         
         #判定起始与终止. 先判终止后判开始避免秒瞬间结束
-        #RAY结束
         if (RAY_dis_sum>SUB_END_NUM) & (RAY_dis_sum/(previous_RAY_sum+1) > 0.5):        #超过一半消失则判定为结束
-            minute=((frame_count-2)/FPS)/60 #结束帧在前一帧
-            second=((frame_count-2)/FPS)%60
             for st in RAYstarttimelist:
-                writetimestamp(ASS_FILENAME,st,("%02d:%06.3f"%(minute,second+0.01))[0:8],"ray")  #结束时间点向上取整(0.01s)
+                writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"ray")
             RAYstarttimelist=[] #清空列表，待复用
-            
-        #RIO结束    
-        if (RIO_dis_sum>SUB_END_NUM) & (RIO_dis_sum/(previous_RIO_sum+1) > 0.5):
-            minute=((frame_count-2)/FPS)/60
-            second=((frame_count-2)/FPS)%60
-            for st in RIOstarttimelist:
-                writetimestamp(ASS_FILENAME,st,("%02d:%06.3f"%(minute,second+0.01))[0:8],"rio")
-            RIOstarttimelist=[]
-        
         #RAY起始
         if (RAY_new_sum>SUB_START_NUM) & (RAY_new_sum/(current_RAY_sum+1) > 0.5):       #超过一半为新出现则判定为新行
-            minute=((frame_count-1)/FPS)/60 #起始帧在本帧
-            second=((frame_count-1)/FPS)%60
-            RAYstarttimelist.append(("%02d:%06.3f"%(minute,second))[0:8])   #起始时间点向下取整(0.01s)
+            RAYstarttimelist.append(frame_to_time(frame_count,FPS))   #起始时间点向下取整(0.01s)
         
+        #RAY R 226 G 76 B 93
+        current_RIO = (R<=55)&(G<=141)&(B<=219)&(B>=213)&(G>=135)&(R>=49)
+        current_RIO_sum = np.sum(current_RIO)
+        RIO_new=(current_RIO==True)&(previous_RIO==False)
+        RIO_new_sum=np.sum(RIO_new)
+        RIO_dis_sum=previous_RIO_sum+RIO_new_sum-current_RIO_sum
+    
+        #RIO结束    
+        if (RIO_dis_sum>SUB_END_NUM) & (RIO_dis_sum/(previous_RIO_sum+1) > 0.5):
+            for st in RIOstarttimelist:
+                writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"rio")
+            RIOstarttimelist=[]
         #RIO起始
         if (RIO_new_sum>SUB_START_NUM) & ((RIO_new_sum)/(current_RIO_sum+1) > 0.5):
-            minute=((frame_count-1)/FPS)/60
-            second=((frame_count-1)/FPS)%60
-            RIOstarttimelist.append(("%02d:%06.3f"%(minute,second))[0:8])    
+            RIOstarttimelist.append(frame_to_time(frame_count,FPS))    
         
         #处理结束，当前帧 存为 上一帧
         previous_RAY=current_RAY
@@ -176,7 +167,7 @@ if __name__ == "__main__":
         if frame_count%600 == 0:        
             PROGRAM_currenttime=time.time()
             print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
-            ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)omesis字幕轴自动生成"%(100*frame_count/TOTAL_FRAMES))
+            ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)%s"%(100*frame_count/TOTAL_FRAMES,VIDEO_FILENAME))
             print("已处理帧数： %d"%frame_count)
             print("已用时间 %d秒"%(PROGRAM_currenttime-PROGRAM_starttime))
             print("每60帧处理用时 %.2f秒"%(60*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count))
@@ -186,19 +177,15 @@ if __name__ == "__main__":
 
     #收尾可能没结束的字幕
     for st in RAYstarttimelist:
-        minute=((frame_count-2)/FPS)/60 #结束帧在前一帧
-        second=((frame_count-2)/FPS)%60
         for st in RAYstarttimelist:
-            writetimestamp(ASS_FILENAME,st,("%02d:%06.3f"%(minute,second+0.01))[0:8],"ray")
+            writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"ray")
 
     for st in RIOstarttimelist:
-        minute=((frame_count-2)/FPS)/60
-        second=((frame_count-2)/FPS)%60
         for st in RIOstarttimelist:
-            writetimestamp(ASS_FILENAME,st,("%02d:%06.3f"%(minute,second+0.01))[0:8],"rio")
+            writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"rio")
 
     print("\n处理完成")
-    ctypes.windll.kernel32.SetConsoleTitleW("(处理完成)omesis字幕轴自动生成")
+    ctypes.windll.kernel32.SetConsoleTitleW("(处理完成)%s"%(VIDEO_FILENAME))
     input('按Enter结束。。。')
         
     #释放资源
