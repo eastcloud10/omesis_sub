@@ -3,43 +3,78 @@
 import numpy as np
 import cv2 as cv
 import time
-import shutil
 import ctypes
 import os
 
+class TIME_it():
+    def __init__(self):
+        self.starttime = time.time()
+        self.ticktime = self.starttime
+    def tick(self):
+        return time.time() - self.starttime
 class ACTOR():
-    def __init__(self,name='ray',lowh=np.array([0,0,0]),uph=np.array([180,255,255]),kernelsize=5,start_amount=1200,end_amount=1000,shrink_scale=2):
+    def __init__(self,name='ray',lowh=np.array([0,0,0]),uph=np.array([180,255,255]),kernelsize=5,start_amount=1200,end_amount=1000):
         self.name = name
         self.lowh = lowh
         self.uph = uph
         self.kernelsize = kernelsize
         self.start_amount = start_amount
         self.end_amount = end_amount
-        self.shrink_scale = shrink_scale
-        self.previous_mask = np.zeros((HEIGHT//shrink_scale,WIDTH//shrink_scale),dtype=np.uint8)
+        self.previous_mask = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
         self.previous_mask_sum = 0
         self.startframelist =[]
-    def eatimg_writeass(self,img,frame_count):
-        current_mask = get_mask(img,self.lowh,self.uph,self.kernelsize)
-        current_mask_sum = cv.countNonZero(current_mask)
-        mask_new = cv.bitwise_and(current_mask,cv.bitwise_xor(current_mask,self.previous_mask))
-        mask_new_sum = cv.countNonZero(mask_new)       
-        mask_dis_sum = self.previous_mask_sum + mask_new_sum - current_mask_sum
-        #判结束
-        if (mask_dis_sum>self.end_amount) & (mask_dis_sum/(self.previous_mask_sum+1) > 0.5):        #超过一半消失则判定为结束
-            for st in self.startframelist:
-                writetimestamp(ASS_FILENAME,FPS,st,frame_count,self.name)
-            self.startframelist=[] #清空列表，待复用
-        #起始
-        if (mask_new_sum>self.start_amount) & (mask_new_sum/(current_mask_sum+1) > 0.3):
-            self.startframelist.append(frame_count)   #起始时间点向下取整(0.01s)
-        self.previous_mask = current_mask
-        self.previous_mask_sum = current_mask_sum
+        
+    def compare_frames(self,frame_list,frame_count_of_alpha):
+        criteria_dis,criteria_new = 0,0
+        mask_alpha = get_mask(frame_list[0],self.lowh,self.uph,self.kernelsize)
+        mask_omega = get_mask(frame_list[-1],self.lowh,self.uph,self.kernelsize)          
+        mask_alpha_sum = cv.countNonZero(mask_alpha)
+        mask_omega_sum = cv.countNonZero(mask_omega)
+        mask_new = cv.bitwise_and(mask_omega,cv.bitwise_xor(mask_omega,mask_alpha))
+        mask_new_sum = cv.countNonZero(mask_new)
+        mask_dis_sum = mask_alpha_sum + mask_new_sum - mask_omega_sum        
+        if (mask_dis_sum>self.end_amount) & (mask_dis_sum/(mask_alpha_sum+1) > 0.5):
+            criteria_dis = mask_dis_sum//2
+        if (mask_new_sum>self.start_amount) & (mask_new_sum/(mask_omega_sum+1) > 0.3):
+            criteria_new = mask_new_sum//2
+        if criteria_dis+criteria_new>0:
+            self.small_compare(frame_list,mask_alpha,mask_omega,criteria_new,criteria_dis,frame_count_of_alpha)
+        return
+        
+    def small_compare(self,frame_list,mask_alpha,mask_omega, criteria_new=0, criteria_dis=0,frame_count_of_list0=1):
+        if len(frame_list) == 1:
+            if criteria_dis:
+                for st in self.startframelist:
+                    if frame_count_of_list0 - st >= 30:
+                        writetimestamp(ASS_FILENAME,FPS,st,frame_count_of_list0,self.name)
+                self.startframelist=[]
+            if criteria_new:
+                if len(self.startframelist)>0:
+                    if frame_count_of_list0 - self.startframelist[-1] < 60:
+                        return
+                self.startframelist.append(frame_count_of_list0)
+            return
+        mid_frame = frame_list[(len(frame_list)-1)//2]
+        mask_mid = get_mask(mid_frame,self.lowh,self.uph,self.kernelsize)
+        if criteria_dis:
+            mask_dis = cv.bitwise_and(mask_alpha,cv.bitwise_xor(mask_mid,mask_alpha))
+            mask_dis_sum = cv.countNonZero(mask_dis)
+            if mask_dis_sum > criteria_dis:
+                self.small_compare(frame_list[:(len(frame_list)+1)//2],mask_alpha,mask_omega,0,criteria_dis,frame_count_of_list0)
+            else:
+                self.small_compare(frame_list[(len(frame_list)+1)//2:],mask_alpha,mask_omega,0,criteria_dis,frame_count_of_list0+(len(frame_list)+1)//2)
+        if criteria_new:
+            mask_new = cv.bitwise_and(mask_mid,cv.bitwise_xor(mask_mid,mask_alpha))
+            mask_new_sum = cv.countNonZero(mask_new)
+            if mask_new_sum > criteria_new:
+                self.small_compare(frame_list[:(len(frame_list)+1)//2],mask_alpha,mask_omega,criteria_new,0,frame_count_of_list0)
+            else:
+                self.small_compare(frame_list[(len(frame_list)+1)//2:],mask_alpha,mask_omega,criteria_new,0,frame_count_of_list0+(len(frame_list)+1)//2)
+
     def allend(self,frame_count):
         for st in self.startframelist:
             writetimestamp(ASS_FILENAME,FPS,st,frame_count,self.name)
         
-    
 #根据范围取mask
 def get_mask(img,lowerhsv,upperhsv,kernelsize):
     hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
@@ -48,8 +83,8 @@ def get_mask(img,lowerhsv,upperhsv,kernelsize):
     return res
     
 #从帧数计算（该帧向前取整）的时间，返回的是字符串，第一帧为00:00.00
-def frame_to_time(fc,FPS):
-    return ("%02d:%06.3f"%(((fc-1)/FPS)/60,((fc-1)/FPS)%60))[0:8]
+def frame_to_time(fc):
+    return ("%02d:%02d.%s"%(((fc-1)/FPS)/60,int(((fc-1)/FPS)%60),str((fc-1)/FPS%1)[2:4]))
 
 #初始化空ass文件
 def initial_ass(ASS_FILENAME,VIDEO_FILENAME):    
@@ -79,6 +114,7 @@ Style: ray字幕,Microsoft YaHei UI,100,&H005E4EE3,&HFF0000FF,&H00FFFFFF,&H00000
 Style: rio字幕,Microsoft YaHei UI,100,&H00D98936,&H000000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,2,10,10,220,1
 Style: 薄边框注释,Microsoft YaHei UI,60,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,0,2,10,10,10,1
 Style: 双色,Microsoft YaHei UI,100,&H005F4EE3,&H000000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,8,0,2,10,10,360,1
+Style: 边缘模糊注释,宋体,80,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -103,23 +139,30 @@ Comment: 1,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\\pos($sx
 def writetimestamp(ASS_FILENAME,FPS,startframe,endframe,name='ray'):
     with open(ASS_FILENAME,'a',encoding="utf-8") as f:
         if name=='BLACK':
-            f.write("Dialogue: 0,0:%s,0:%s,薄边框注释,,0,0,0,,（薄边框注释）\n"%(frame_to_time(startframe,FPS),frame_to_time(endframe,FPS)))
+            f.write("Dialogue: 0,0:%s,0:%s,薄边框注释,,0,0,0,,（实线边框注释）\n"%(frame_to_time(startframe),frame_to_time(endframe)))
+        elif name=='GRAY':
+            f.write("Dialogue: 0,0:%s,0:%s,边缘模糊注释,,0,0,0,,{\blur5}（边缘模糊注释）\n"%(frame_to_time(startframe),frame_to_time(endframe)))
         else:
-            f.write("Dialogue: 0,0:%s,0:%s,%s字幕,,0,0,0,,%s说：\n"%(frame_to_time(startframe,FPS),frame_to_time(endframe,FPS),name,name))
+            f.write("Dialogue: 0,0:%s,0:%s,%s字幕,,0,0,0,,%s说：\n"%(frame_to_time(startframe),frame_to_time(endframe),name,name))
  
 if __name__ == "__main__": 
     #修改终端标题
     ctypes.windll.kernel32.SetConsoleTitleW("omesis字幕轴自动生成")
-    
+    SERIES_LENGTH = 16
+    if os.name == 'nt':
+        os.system("cls")
     global VIDEO_FILENAME,ASS_FILENAME
-    VIDEO_FILENAME = input('请输入视频文件名：\n')
-    if VIDEO_FILENAME[-4:] != '.mp4':
-        VIDEO_FILENAME = VIDEO_FILENAME+'.mp4'
+    filelist = os.listdir()
+    mp4list = []
+    for filename in filelist:
+        if filename[-4:] == '.mp4':
+            print("已发现：%s"%filename)
+            VIDEO_FILENAME = filename
+            break
+    else:
+        VIDEO_FILENAME = input('请输入视频文件名（含扩展名）：\n')
     ASS_FILENAME = "【自动生成】"+VIDEO_FILENAME[:-4]+'.ass'
     initial_ass(ASS_FILENAME,VIDEO_FILENAME)
-    
-    #计时开始
-    PROGRAM_starttime=time.time()
 
     #载入视频
     cap = cv.VideoCapture(VIDEO_FILENAME,cv.CAP_FFMPEG) #打开视频
@@ -128,54 +171,49 @@ if __name__ == "__main__":
     FPS = cap.get(cv.CAP_PROP_FPS)                      #帧率
     TOTAL_FRAMES = cap.get(cv.CAP_PROP_FRAME_COUNT)          #总帧数
     WIDTH = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-    HEIGHT = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-    
+    HEIGHT = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))    
 
+    #字型列表
     actors = []
-    RAY = ACTOR(name='ray',lowh=np.array([174,163,215]),uph=np.array([180,170,245]),kernelsize=5,start_amount=1200,end_amount=1000,shrink_scale=2)
+    RAY = ACTOR(name='ray',lowh=np.array([174,163,215]),uph=np.array([180,170,245]),kernelsize=5,start_amount=5000,end_amount=4500)
     actors.append(RAY)
-    RIO = ACTOR(name='rio',lowh=np.array([100,170,188]),uph=np.array([105,210,217]),kernelsize=5,start_amount=1200,end_amount=1000,shrink_scale=2)
+    RIO = ACTOR(name='rio',lowh=np.array([100,170,188]),uph=np.array([105,210,217]),kernelsize=5,start_amount=5000,end_amount=4500)
     actors.append(RIO)
-    BLACK = ACTOR(name='BLACK',lowh=np.array([0,0,14]),uph=np.array([179,40,46]),kernelsize=3,start_amount=9000,end_amount=8000,shrink_scale=1)
+    BLACK = ACTOR(name='BLACK',lowh=np.array([0,0,14]),uph=np.array([179,40,46]),kernelsize=3,start_amount=9000,end_amount=8000)
     actors.append(BLACK)
+    GRAY = ACTOR(name='GRAY',lowh=np.array([0,0,100]),uph=np.array([179,20,131]),kernelsize=3,start_amount=10000,end_amount=7000)
+    actors.append(GRAY)
     
     #进度条
     print("----------")
     frame_count = 0
+    period_frames = []
+    clock = TIME_it()
     while(cap.isOpened()):
-        ret, img = cap.read()        
+        ret, img = cap.read()
         if ret is False:#没有帧了    
-            break
-            
-        frame_count = frame_count + 1 #成功读帧，帧数+1
-        small_img=cv.resize(img,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA)
-        
-        #进度条
-        if frame_count%60==0:
-            print('|',end='',flush=True)
-            if frame_count%600==0:
+            break            
+        frame_count = frame_count + 1 #成功读帧，帧数+1          
+        period_frames.append(img)
+        if frame_count%SERIES_LENGTH == 0:
+            for actor in actors:
+                actor.compare_frames(period_frames,frame_count-SERIES_LENGTH+1)
+            period_frames = []
+            print('|',end='',flush=True)                
+            if frame_count%(10*SERIES_LENGTH) == 0:
+                totaltime = clock.tick()
                 print('')
-
-        for actor in actors:
-            if actor.shrink_scale == 2:
-                actor.eatimg_writeass(small_img,frame_count)
-            elif actor.shrink_scale == 1:
-                actor.eatimg_writeass(img,frame_count)
-
-        #每600帧（约10秒）显示一次进度
-        if frame_count%600 == 0:
-            if os.name == 'nt':
-                os.system("cls")
-            PROGRAM_currenttime=time.time()
-            print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
-            ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)%s"%(100*frame_count/TOTAL_FRAMES,VIDEO_FILENAME))
-            print("已处理帧数： %d"%frame_count)
-            print("已处理至：%s"%(frame_to_time(frame_count,FPS)))
-            print("已用时间 %d秒"%(PROGRAM_currenttime-PROGRAM_starttime))
-            print("每60帧处理用时 %.2f秒"%(60*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count))
-            time_left = (TOTAL_FRAMES - frame_count)*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count
-            print("预计剩余时间：%d分%d秒"%(time_left/60,time_left%60))
-            print("----------") #进度条
+                if os.name == 'nt':
+                    os.system("cls")
+                print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
+                ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)%s"%(100*frame_count/TOTAL_FRAMES,VIDEO_FILENAME))
+                print("已处理帧数： %d"%frame_count)
+                print("已处理至：%s"%(frame_to_time(frame_count)))
+                print("已用时间 %d秒"%totaltime)
+                print("每秒视频处理用时 %.2f秒"%(FPS*totaltime/frame_count))
+                time_left = (TOTAL_FRAMES - frame_count)*totaltime/frame_count
+                print("预计剩余时间：%d分%d秒"%(time_left/60,time_left%60))
+                print("--------") #进度条
 
     #收尾可能没结束的字幕
     for actor in actors:

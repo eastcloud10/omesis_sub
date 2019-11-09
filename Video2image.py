@@ -25,7 +25,15 @@ def BLACK_mask(img):
     black_mask = cv.inRange(hsv,lower_ray,upper_ray)
     res = cv.morphologyEx(black_mask, cv.MORPH_OPEN, np.ones((3,3),np.uint8))
     return res
-
+    
+def GRAY_mask(img):
+    hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+    lower_ray = np.array([0,0,100])
+    upper_ray = np.array([179,20,131])
+    black_mask = cv.inRange(hsv,lower_ray,upper_ray)
+    res = cv.morphologyEx(black_mask, cv.MORPH_OPEN, np.ones((3,3),np.uint8))
+    return res
+    
 if __name__ == "__main__": 
     VIDEO_FILENAME = input('请输入视频文件名：\n')
     if VIDEO_FILENAME[-4:] != '.mp4':
@@ -45,13 +53,16 @@ if __name__ == "__main__":
         if frame_count%30 == 0:
             small_img=cv.resize(img,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA)
             cv.imshow('frame', small_img)
-            RAYmask=RAY_mask(img)
-            RIOmask=RIO_mask(img)
-            BLACKmask=BLACK_mask(img)
-            cv.imshow('ray', cv.resize(RAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
-            cv.imshow('rio', cv.resize(RIOmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-            cv.imshow('black',cv.resize(BLACKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-            print("RAY pxs:%d\tRIO pxs:%d\tBLACK pxs:%d"%(cv.countNonZero(RAYmask),cv.countNonZero(RIOmask),cv.countNonZero(BLACKmask)))
+            GRAYmask=GRAY_mask(img)
+            #RAYmask=RAY_mask(img)
+            #RIOmask=RIO_mask(img)
+            #BLACKmask=BLACK_mask(img)
+            cv.imshow('gray', cv.resize(GRAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+            #cv.imshow('ray', cv.resize(RAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
+            #cv.imshow('rio', cv.resize(RIOmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+            #cv.imshow('black',cv.resize(BLACKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+            #print("RAY pxs:%d\tRIO pxs:%d\tBLACK pxs:%d"%(cv.countNonZero(RAYmask),cv.countNonZero(RIOmask),cv.countNonZero(BLACKmask)))
+            print("gray pxs:%d"%(cv.countNonZero(GRAYmask)))
             KEY= cv.waitKey(0)
             if KEY == ord('q'):
                 break               
