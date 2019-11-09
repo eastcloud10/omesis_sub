@@ -1,11 +1,18 @@
-#编写于python3.7，使用库numpy,opencv2
+#编写于python3.7，使用库numpy,opencv
 # -*- coding: UTF-8 -*-
 import numpy as np
-import cv2
+import cv2 as cv
 import time
 import shutil
 import ctypes
 
+#根据范围取mask
+def get_mask(img,lowerhsv,upperhsv,kernelsize):
+    hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+    got_mask = cv.inRange(hsv,lowerhsv,upperhsv)
+    res = cv.morphologyEx(got_mask, cv.MORPH_OPEN, np.ones((kernelsize,kernelsize),np.uint8))
+    return res
+    
 #从帧数计算（该帧向前取整）的时间，返回的是字符串，第一帧为00:00.00
 def frame_to_time(fc,FPS):
     return ("%02d:%06.3f"%(((fc-1)/FPS)/60,((fc-1)/FPS)%60))[0:8]
@@ -59,12 +66,12 @@ Comment: 1,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\\pos($sx
         f.write(ASS_BASE)
     
 #向ass中写入时间轴数据。样式为ray字幕和rio字幕
-def writetimestamp(ASS_FILENAME,starttimestring,endtimestring,name='ray'):
+def writetimestamp(ASS_FILENAME,FPS,startframe,endframe,name='ray'):
     with open(ASS_FILENAME,'a',encoding="utf-8") as f:
         if name=='BLACK':
-            f.write("Dialogue: 0,0:%s,0:%s,薄边框注释,,0,0,0,,（薄边框注释）\n"%(starttimestring,endtimestring))
+            f.write("Dialogue: 0,0:%s,0:%s,薄边框注释,,0,0,0,,（薄边框注释）\n"%(frame_to_time(startframe,FPS),frame_to_time(endframe,FPS)))
         else:
-            f.write("Dialogue: 0,0:%s,0:%s,%s字幕,,0,0,0,,%s说：\n"%(starttimestring,endtimestring,name,name))
+            f.write("Dialogue: 0,0:%s,0:%s,%s字幕,,0,0,0,,%s说：\n"%(frame_to_time(startframe,FPS),frame_to_time(endframe,FPS),name,name))
  
 if __name__ == "__main__": 
     #修改终端标题
@@ -76,45 +83,58 @@ if __name__ == "__main__":
     ASS_FILENAME = "【自动生成】"+VIDEO_FILENAME[:-4]+'.ass'
     initial_ass(ASS_FILENAME,VIDEO_FILENAME)
         
-    #字幕（出现/消失）像素判定数，可根据分辨率确定
-    SUB_START_NUM = 5000
-    SUB_END_NUM   = 5000
-    BLACK_START_NUM = 10000
-    BLACK_END_NUM   = 9000
-
+    #字幕（出现/消失）像素判定数。减小则更容易触发，更大则更难触发。宽进严出
+    SUB_START_NUM = 1200
+    SUB_END_NUM   = 1000
+    BLACK_START_NUM = 9000
+    BLACK_END_NUM   = 8000
+    #WHITE_START_NUM = 9000
+    #WHITE_END_NUM   = 9000
+    
+    LOWER_RAY = np.array([174,163,215])
+    UPPER_RAY = np.array([180,170,245])
+    RAY_KERNEL_SIZE = 5  #更大则更容易去噪点，但也更容易损失细节
+    
+    LOWER_RIO = np.array([100,170,188])
+    UPPER_RIO = np.array([105,210,217])
+    RIO_KERNEL_SIZE = 5
+    
+    LOWER_BLACK = np.array([0,0,14])
+    UPPER_BLACK = np.array([179,40,46])
+    BLACK_KERNEL_SIZE = 3
     #计时开始
     PROGRAM_starttime=time.time() 
 
     #载入视频
-    cap = cv2.VideoCapture(VIDEO_FILENAME,cv2.CAP_FFMPEG) #打开视频
+    cap = cv.VideoCapture(VIDEO_FILENAME,cv.CAP_FFMPEG) #打开视频
     print('成功读取视频')
-    FPS = cap.get(cv2.CAP_PROP_FPS)                      #帧率
-    TOTAL_FRAMES = cap.get(cv2.CAP_PROP_FRAME_COUNT)          #总帧数
-    WIDTH = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-    HEIGHT = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    FPS = cap.get(cv.CAP_PROP_FPS)                      #帧率
+    TOTAL_FRAMES = cap.get(cv.CAP_PROP_FRAME_COUNT)          #总帧数
+    WIDTH = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
+    HEIGHT = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
     frame_count = 0
 
     #初始化空判定
-    previous_RAY = np.zeros(1920*1080)
-    previous_RIO = np.zeros(1920*1080)
+    previous_RAY = np.zeros((HEIGHT//2,WIDTH//2),dtype=np.uint8)    
     previous_RAY_sum = 0
-    previous_RIO_sum = 0
-    RAY_new = np.zeros(1920*1080)
-    RIO_new = np.zeros(1920*1080)
-    RAY_dis = np.zeros(1920*1080)
-    RIO_dis = np.zeros(1920*1080)
+    RAY_new = np.zeros((HEIGHT//2,WIDTH//2),dtype=np.uint8)
+    #RAY_dis = np.zeros(1920*1080*3)
     
-    """
-    previous_BLACK = np.zeros(1920*1080)
+    previous_RIO = np.zeros((HEIGHT//2,WIDTH//2),dtype=np.uint8)
+    previous_RIO_sum = 0    
+    RIO_new = np.zeros((HEIGHT//2,WIDTH//2),dtype=np.uint8)    
+    #RIO_dis = np.zeros(1920*1080*3)
+    
+    
+    previous_BLACK = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
     previous_BLACK_sum = 0
-    BLACK_new = np.zeros(1920*1080)
-    BLACK_dis = np.zeros(1920*1080)
-    """
-    
+    BLACK_new = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
+    #BLACK_dis = np.zeros(1920*1080*3)
+
     #待写入
-    RAYstarttimelist = []
-    RIOstarttimelist = []
-    BLACKstarttimelist = []
+    RAYstartframelist = []
+    RIOstartframelist = []
+    BLACKstartframelist = []
 
     #进度条
     print("----------")
@@ -125,79 +145,81 @@ if __name__ == "__main__":
             break 
             
         frame_count = frame_count + 1 #成功读帧，帧数+1
+        small_img=cv.resize(img,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA)
         
         #进度条
         if frame_count%60==0:
             print('|',end='',flush=True)
             if frame_count%600==0:
                 print('')
-            
-        #三色空间
-        B,G,R=img.transpose(2,0,1).reshape(3,-1)
         
-        #通过颜色判断字幕的存在,用opencv显示图像取色        
-        #RAY R 226 G 76 B 93                
-        current_RAY = (G<=81)&(B<=98)&(R<=231)&(R>=221)&(B>=88)&(G>=71)
-        current_RAY_sum = np.sum(current_RAY)
-        RAY_new=(current_RAY==True)&(previous_RAY==False)        
-        RAY_new_sum=np.sum(RAY_new)        
+        #HSV判定
+        #RAY
+        current_RAY = get_mask(small_img,LOWER_RAY,UPPER_RAY,RAY_KERNEL_SIZE)
+        current_RAY_sum = cv.countNonZero(current_RAY)
+        RAY_new=cv.bitwise_and(current_RAY,cv.bitwise_xor(current_RAY,previous_RAY))
+        RAY_new_sum=cv.countNonZero(RAY_new)       
         RAY_dis_sum=previous_RAY_sum+RAY_new_sum-current_RAY_sum
         
-        #判定起始与终止. 先判终止后判开始避免秒瞬间结束
+        #RAY终止      判定起始与终止. 先判终止后判开始避免秒瞬间结束
         if (RAY_dis_sum>SUB_END_NUM) & (RAY_dis_sum/(previous_RAY_sum+1) > 0.5):        #超过一半消失则判定为结束
-            for st in RAYstarttimelist:
-                writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"ray")
-            RAYstarttimelist=[] #清空列表，待复用
+            for st in RAYstartframelist:
+                writetimestamp(ASS_FILENAME,FPS,st,frame_count,"ray")
+            RAYstartframelist=[] #清空列表，待复用
         #RAY起始
-        if (RAY_new_sum>SUB_START_NUM) & (RAY_new_sum/(current_RAY_sum+1) > 0.5):       #超过一半为新出现则判定为新行
-            RAYstarttimelist.append(frame_to_time(frame_count,FPS))   #起始时间点向下取整(0.01s)
+        if (RAY_new_sum>SUB_START_NUM) & (RAY_new_sum/(current_RAY_sum+1) > 0.3):
+            RAYstartframelist.append(frame_count)   #起始时间点向下取整(0.01s)
         
-        #RIO R 52 G 138 B 216
-        current_RIO = (R<=55)&(G<=141)&(B<=219)&(B>=213)&(G>=135)&(R>=49)
-        current_RIO_sum = np.sum(current_RIO)
-        RIO_new=(current_RIO==True)&(previous_RIO==False)
-        RIO_new_sum=np.sum(RIO_new)
+        #RIO
+        current_RIO = get_mask(small_img,LOWER_RIO,UPPER_RIO,RIO_KERNEL_SIZE)
+        current_RIO_sum = cv.countNonZero(current_RIO)
+        RIO_new=cv.bitwise_and(current_RIO,cv.bitwise_xor(current_RIO,previous_RIO))
+        RIO_new_sum=cv.countNonZero(RIO_new)       
         RIO_dis_sum=previous_RIO_sum+RIO_new_sum-current_RIO_sum
-    
-        #RIO结束    
+        
+        #RIO终止
         if (RIO_dis_sum>SUB_END_NUM) & (RIO_dis_sum/(previous_RIO_sum+1) > 0.5):
-            for st in RIOstarttimelist:
-                writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"rio")
-            RIOstarttimelist=[]
+            for st in RIOstartframelist:
+                writetimestamp(ASS_FILENAME,FPS,st,frame_count,"rio")
+            RIOstartframelist=[] #清空列表，
         #RIO起始
-        if (RIO_new_sum>SUB_START_NUM) & ((RIO_new_sum)/(current_RIO_sum+1) > 0.5):
-            RIOstarttimelist.append(frame_to_time(frame_count,FPS))
+        if (RIO_new_sum>SUB_START_NUM) & (RIO_new_sum/(current_RIO_sum+1) > 0.3):
+            RIOstartframelist.append(frame_count)
         
-        """
-        #BLACK 26~35                
-        current_BLACK = (R<=35)&(G<=35)&(B<=35)&(G>=26)&(B>=26)&(R>=26)
-        current_BLACK_sum = np.sum(current_BLACK)
-        BLACK_new=(current_BLACK==True)&(previous_BLACK==False)        
-        BLACK_new_sum=np.sum(BLACK_new)        
-        BLACK_dis_sum=previous_BLACK_sum + BLACK_new_sum - current_BLACK_sum
+        #黑字
+        current_BLACK = get_mask(img,LOWER_BLACK,UPPER_BLACK,BLACK_KERNEL_SIZE)
+        current_BLACK_sum = cv.countNonZero(current_BLACK)
+        BLACK_new=cv.bitwise_and(current_BLACK,cv.bitwise_xor(current_BLACK,previous_BLACK))
+        BLACK_new_sum=cv.countNonZero(BLACK_new)       
+        BLACK_dis_sum=previous_BLACK_sum+BLACK_new_sum-current_BLACK_sum
         
-        #判定起始与终止. 先判终止后判开始避免秒瞬间结束
-        if (BLACK_dis_sum>BLACK_END_NUM):        #超过一半消失则判定为结束
-            for st in BLACKstarttimelist:
-                writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"BLACK")
-            BLACKstarttimelist=[] #清空列表，待复用
-        #BLACK起始
-        if (BLACK_new_sum>BLACK_START_NUM):       #超过一半为新出现则判定为新行
-            BLACKstarttimelist.append(frame_to_time(frame_count,FPS))   #起始时间点向下取整(0.01s)
-        """
+        #黑字终止
+        if (BLACK_dis_sum>BLACK_END_NUM) & (BLACK_dis_sum/(previous_BLACK_sum+1) > 0.5): 
+            for st in BLACKstartframelist:
+                writetimestamp(ASS_FILENAME,FPS,st,frame_count,"BLACK")
+            BLACKstartframelist=[]
+        #黑字起始
+        if (BLACK_new_sum>BLACK_START_NUM):
+            BLACKstartframelist.append(frame_count)
+        
         
         #处理结束，当前帧 存为 上一帧
         previous_RAY=current_RAY
-        previous_RIO=current_RIO
         previous_RAY_sum=current_RAY_sum
+        
+        previous_RIO=current_RIO        
         previous_RIO_sum=current_RIO_sum
-              
+        
+        previous_BLACK=current_BLACK        
+        previous_BLACK_sum=current_BLACK_sum
+
         #每600帧（约10秒）显示一次进度
         if frame_count%600 == 0:        
             PROGRAM_currenttime=time.time()
             print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
             ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)%s"%(100*frame_count/TOTAL_FRAMES,VIDEO_FILENAME))
             print("已处理帧数： %d"%frame_count)
+            print("已处理至：%s"%(frame_to_time(frame_count,FPS)))
             print("已用时间 %d秒"%(PROGRAM_currenttime-PROGRAM_starttime))
             print("每60帧处理用时 %.2f秒"%(60*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count))
             time_left = (TOTAL_FRAMES - frame_count)*(PROGRAM_currenttime-PROGRAM_starttime)/frame_count
@@ -205,20 +227,20 @@ if __name__ == "__main__":
             print("----------") #进度条
 
     #收尾可能没结束的字幕
-    for st in RAYstarttimelist:
-        writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"ray")
+    for st in RAYstartframelist:
+        writetimestamp(ASS_FILENAME,FPS,st,frame_count,"ray")
 
-    for st in RIOstarttimelist:
-        writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"rio")
-    """    
-    for st in BLACKstarttimelist:
-        writetimestamp(ASS_FILENAME,st,frame_to_time(frame_count,FPS),"BLACK")
-    """
+    for st in RIOstartframelist:
+        writetimestamp(ASS_FILENAME,FPS,st,frame_count,"rio")
+
+    for st in BLACKstartframelist:
+        writetimestamp(ASS_FILENAME,FPS,st,frame_count,"BLACK")
+
     print("\n处理完成")
     ctypes.windll.kernel32.SetConsoleTitleW("(处理完成)%s"%(VIDEO_FILENAME))
     input('按Enter结束。。。')
         
     #释放资源
     cap.release()
-    cv2.destroyAllWindows()
+    cv.destroyAllWindows()
 
