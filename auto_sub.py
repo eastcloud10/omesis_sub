@@ -110,11 +110,13 @@ Video Zoom Percent: 0.375000
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,Arial,45,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,4.5,4.5,2,30,30,23,1
-Style: ray字幕,Microsoft YaHei UI,100,&H005E4EE3,&HFF0000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,2,10,10,220,1
-Style: rio字幕,Microsoft YaHei UI,100,&H00D98936,&H000000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,2,10,10,220,1
+Style: ray字幕,Microsoft YaHei UI,100,&H005D5EEF,&HFF0000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,2,10,10,220,1
+Style: rio字幕,Microsoft YaHei UI,100,&H00DE882B,&H000000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,2,10,10,220,1
 Style: 薄边框注释,Microsoft YaHei UI,60,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,0,2,10,10,10,1
 Style: 双色,Microsoft YaHei UI,100,&H005F4EE3,&H000000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,8,0,2,10,10,360,1
 Style: 边缘模糊注释,宋体,80,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1
+Style: ray1通常,Microsoft YaHei UI,80,&H005D5EEF,&HFF0000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,10,10,10,1
+Style: rio1通常,Microsoft YaHei UI,80,&H00DE882B,&HFF0000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -134,16 +136,30 @@ Comment: 1,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\\pos($sx
     with open(ASS_FILENAME,"w",encoding='utf-8') as f:
         f.write(u'\ufeff') #防Aegisub乱码
         f.write(ASS_BASE)
+def progress_bar(frame_count):
+    totaltime = clock.tick()
+    print('')
+    if os.name == 'nt':
+        os.system("cls")
+    print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
+    ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)%s"%(100*frame_count/TOTAL_FRAMES,VIDEO_FILENAME))
+    print("已处理帧数： %d"%frame_count)
+    print("已处理至：%s"%(frame_to_time(frame_count)))
+    print("已用时间 %d秒"%totaltime)
+    print("每秒视频处理用时 %.2f秒"%(FPS*totaltime/frame_count))
+    time_left = (TOTAL_FRAMES - frame_count)*totaltime/frame_count
+    print("预计剩余时间：%d分%d秒"%(time_left/60,time_left%60))
+    print("--------") #进度条
     
 #向ass中写入时间轴数据。样式为ray字幕和rio字幕
 def writetimestamp(ASS_FILENAME,FPS,startframe,endframe,name='ray'):
     with open(ASS_FILENAME,'a',encoding="utf-8") as f:
         if name=='BLACK':
-            f.write("Dialogue: 0,0:%s,0:%s,薄边框注释,,0,0,0,,（实线边框注释）\n"%(frame_to_time(startframe),frame_to_time(endframe)))
+            f.write("Dialogue: 0,0:%s,0:%s,薄边框注释,,0,0,0,,【实线边框文字】\n"%(frame_to_time(startframe),frame_to_time(endframe)))
         elif name=='GRAY':
-            f.write("Dialogue: 0,0:%s,0:%s,边缘模糊注释,,0,0,0,,{\blur5}（边缘模糊注释）\n"%(frame_to_time(startframe),frame_to_time(endframe)))
+            f.write("Dialogue: 0,0:%s,0:%s,边缘模糊注释,,0,0,0,,{\\blur5}【边缘模糊注释】\n"%(frame_to_time(startframe),frame_to_time(endframe)))
         else:
-            f.write("Dialogue: 0,0:%s,0:%s,%s字幕,,0,0,0,,%s说：\n"%(frame_to_time(startframe),frame_to_time(endframe),name,name))
+            f.write("Dialogue: 0,0:%s,0:%s,%s字幕,,0,0,0,,【%s说：】\n"%(frame_to_time(startframe),frame_to_time(endframe),name,name))
  
 if __name__ == "__main__": 
     #修改终端标题
@@ -181,7 +197,7 @@ if __name__ == "__main__":
     actors.append(RIO)
     BLACK = ACTOR(name='BLACK',lowh=np.array([0,0,14]),uph=np.array([179,40,46]),kernelsize=3,start_amount=9000,end_amount=8000)
     actors.append(BLACK)
-    GRAY = ACTOR(name='GRAY',lowh=np.array([0,0,100]),uph=np.array([179,20,131]),kernelsize=3,start_amount=10000,end_amount=7000)
+    GRAY = ACTOR(name='GRAY',lowh=np.array([0,0,100]),uph=np.array([179,20,131]),kernelsize=3,start_amount=10000,end_amount=9000)
     actors.append(GRAY)
     
     #进度条
@@ -201,19 +217,7 @@ if __name__ == "__main__":
             period_frames = []
             print('|',end='',flush=True)                
             if frame_count%(10*SERIES_LENGTH) == 0:
-                totaltime = clock.tick()
-                print('')
-                if os.name == 'nt':
-                    os.system("cls")
-                print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
-                ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)%s"%(100*frame_count/TOTAL_FRAMES,VIDEO_FILENAME))
-                print("已处理帧数： %d"%frame_count)
-                print("已处理至：%s"%(frame_to_time(frame_count)))
-                print("已用时间 %d秒"%totaltime)
-                print("每秒视频处理用时 %.2f秒"%(FPS*totaltime/frame_count))
-                time_left = (TOTAL_FRAMES - frame_count)*totaltime/frame_count
-                print("预计剩余时间：%d分%d秒"%(time_left/60,time_left%60))
-                print("--------") #进度条
+                progress_bar(frame_count)
 
     #收尾可能没结束的字幕
     for actor in actors:
