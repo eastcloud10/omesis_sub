@@ -191,13 +191,13 @@ if __name__ == "__main__":
 
     #字型列表
     actors = []
-    RAY = ACTOR(name='ray',lowh=np.array([174,163,215]),uph=np.array([180,170,245]),kernelsize=5,start_amount=5000,end_amount=4500)
+    RAY = ACTOR(name='ray',lowh=np.array([174,163,215]),uph=np.array([180,170,245]),kernelsize=5,start_amount=2000,end_amount=1400)
     actors.append(RAY)
-    RIO = ACTOR(name='rio',lowh=np.array([100,170,188]),uph=np.array([105,210,217]),kernelsize=5,start_amount=5000,end_amount=4500)
+    RIO = ACTOR(name='rio',lowh=np.array([100,170,188]),uph=np.array([105,210,217]),kernelsize=5,start_amount=2000,end_amount=1400)
     actors.append(RIO)
-    BLACK = ACTOR(name='BLACK',lowh=np.array([0,0,14]),uph=np.array([179,40,46]),kernelsize=3,start_amount=9000,end_amount=8000)
+    BLACK = ACTOR(name='BLACK',lowh=np.array([0,0,14]),uph=np.array([179,40,46]),kernelsize=3,start_amount=9000,end_amount=6300)
     actors.append(BLACK)
-    GRAY = ACTOR(name='GRAY',lowh=np.array([0,0,100]),uph=np.array([179,20,131]),kernelsize=3,start_amount=10000,end_amount=9000)
+    GRAY = ACTOR(name='GRAY',lowh=np.array([0,0,100]),uph=np.array([179,20,131]),kernelsize=3,start_amount=10000,end_amount=7000)
     actors.append(GRAY)
     
     #进度条
