@@ -1,0 +1,4 @@
+[{"name":"ray","fontname":"ray字幕","defaulttext":"【ray说：】","lh":[174,163,215],"uh":[180,170,245],"kernelsize":5,"start_amount":2000,"end_amount":1400},
+{"name":"rio","fontname":"rio字幕","defaulttext":"【rio说：】","lh":[100,170,188],"uh":[105,210,217],"kernelsize":5,"start_amount":2000,"end_amount":1400},
+{"name":"BLACK","fontname":"加粗边框注释","defaulttext":"{\\bord8}【加粗边框注释】","lh":[0,0,14],"uh":[179,40,46],"kernelsize":3,"start_amount":9000,"end_amount":6300},
+{"name":"GRAY","fontname":"边缘模糊注释","defaulttext":"{\\blur5}【边缘模糊文字】","lh":[0,0,100],"uh":[179,20,131],"kernelsize":3,"start_amount":10000,"end_amount":7000}]
