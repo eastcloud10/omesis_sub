@@ -9,3 +9,5 @@
 注2：【边缘模糊文字】识别率较低，需要手动调整
 
 参考了cherry的“红蓝色字幕空轴生成.m”的思路，特此感谢
+
+链接: https://pan.baidu.com/s/1ubVd_jKLjRxTzqGkCaJfZA 提取码: 2je7 复制这段内容后打开百度网盘手机App，操作更方便哦
