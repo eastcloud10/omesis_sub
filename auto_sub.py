@@ -213,7 +213,7 @@ if __name__ == "__main__":
     #字型列表
     RAY = ACTOR(name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([174,163,215]),uph=np.array([180,170,245]),kernelsize=5,start_amount=2000,end_amount=1400)
     RIO = ACTOR(name='rio',fontname='rio字幕',defaulttext='【rio说：】',lowh=np.array([100,170,188]),uph=np.array([105,210,217]),kernelsize=5,start_amount=2000,end_amount=1400)
-    BLACK = ACTOR(name='BLACK',fontname='加粗边框注释',defaulttext=r'{\bord8}【加粗边框注释】',lowh=np.array([0,0,14]),uph=np.array([179,40,46]),kernelsize=3,start_amount=9000,end_amount=6300)
+    BLACK = ACTOR(name='BLACK',fontname='加厚边框注释',defaulttext=r'{\bord8}【加厚边框注释】',lowh=np.array([0,0,14]),uph=np.array([179,40,46]),kernelsize=3,start_amount=9000,end_amount=6300)
     GRAY = ACTOR(name='GRAY',fontname='边缘模糊注释',defaulttext=r'{\blur5}【边缘模糊文字】',lowh=np.array([0,0,100]),uph=np.array([179,20,131]),kernelsize=3,start_amount=10000,end_amount=7000)
     
     #进度条
