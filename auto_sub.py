@@ -1,11 +1,10 @@
-#编写于python3.7，使用库numpy,opencv
+#编写于python3.7，使用库numpy,opencv(ffmpeg)
 # -*- coding: UTF-8 -*-
 import numpy as np
 import cv2 as cv
 import time
 import ctypes
 import os
-from string import Template
 
 class TIME_it():
     def __init__(self):
@@ -17,9 +16,9 @@ class ACTOR():
     actor_list = []
     def __init__(self,name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([0,0,0]),uph=np.array([180,255,255]),kernelsize=5,start_amount=1200,end_amount=1000,**kwargs):
         self.name = name
-        self.lowh = lowh
+        self.lowh = lowh #HSV颜色空间的上、下界
         self.uph = uph
-        self.kernelsize = kernelsize
+        self.kernelsize = kernelsize #OPEN操作的框尺寸
         self.start_amount = start_amount
         self.end_amount = end_amount
         self.previous_mask = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
@@ -28,10 +27,10 @@ class ACTOR():
         self.mask_alpha = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
         self.mask_alpha_sum = 0
         self.fontname = fontname
-        self.defaulttext = defaulttext
+        self.defaulttext = defaulttext #默认文本
         ACTOR.actor_list.append(self)
         
-    def rough_compare(self,frame_list,frame_count_of_alpha):
+    def rough_compare(self,frame_list,frame_count_of_alpha): #每隔16帧进行一次比对
         criteria_dis,criteria_new = 0,0
         mask_omega = get_mask(frame_list[-1],self.lowh,self.uph,self.kernelsize)          
         mask_omega_sum = cv.countNonZero(mask_omega)
@@ -43,17 +42,18 @@ class ACTOR():
         if (mask_new_sum>self.start_amount) & (mask_new_sum/(mask_omega_sum+1) > 0.3):
             criteria_new = mask_new_sum//2
         if criteria_dis+criteria_new>0:
-            self.deep_compare(frame_list,criteria_new,criteria_dis,frame_count_of_alpha+1)
+            self.deep_compare(frame_list,criteria_new,criteria_dis,frame_count_of_alpha+1) #如果发现新出现或消失，则使用二分法定位改变帧
         self.mask_alpha = mask_omega 
         self.mask_alpha_sum = mask_omega_sum
         return
     
+    #使用二分法，定位发生改变（字幕出现/消失）的帧
     def deep_compare(self,frame_list, criteria_new=0, criteria_dis=0,frame_count_of_list0=1):
         if len(frame_list) == 1:
             if criteria_dis:
                 for st in self.startframelist:
                     if frame_count_of_list0 - st >= 30:
-                        writetimestamp(ASS_FILENAME,FPS,st,frame_count_of_list0,self.fontname,self.defaulttext)
+                        writetimestamp(FPS,st,frame_count_of_list0,self.fontname,self.defaulttext)
                 self.startframelist=[]
             if criteria_new:
                 if len(self.startframelist)>0:
@@ -78,19 +78,19 @@ class ACTOR():
             else:
                 self.deep_compare(frame_list[(len(frame_list)+1)//2:],criteria_new,0,frame_count_of_list0+(len(frame_list)+1)//2)
 
-    def allend(self,frame_count):
+    def allend(self,frame_count): #收尾可能没结束的字幕
         for st in self.startframelist:
-            writetimestamp(ASS_FILENAME,FPS,st,frame_count,self.fontname,self.defaulttext)
+            writetimestamp(FPS,st,frame_count,self.fontname,self.defaulttext)
         
 #根据范围取mask
-def get_mask(img,lowerhsv,upperhsv,kernelsize):
+def get_mask(img,lowerhsv,upperhsv,kernelsize): #在HSV颜色空间判断字幕像素点
     hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
     got_mask = cv.inRange(hsv,lowerhsv,upperhsv)
-    res = cv.morphologyEx(got_mask, cv.MORPH_OPEN, np.ones((kernelsize,kernelsize),np.uint8))
+    res = cv.morphologyEx(got_mask, cv.MORPH_OPEN, np.ones((kernelsize,kernelsize),np.uint8)) #OPEN操作，消除噪点
     return res
     
 #从帧数计算（该帧向前取整）的时间，返回的是字符串，第一帧为00:00.00
-def frame_to_time(fc):
+def frame_to_time(fc): #由于浮点数误差，对60帧和59.94帧特化
     hour,minute,second,centisecond = 0,0,0,0
     if abs(FPS-60)<0.01:
         hour = (fc//216000)
@@ -159,10 +159,11 @@ Comment: 1,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\\pos($sx
         f.write(ASS_BASE)
         
 #向ass中写入时间轴数据
-def writetimestamp(ASS_FILENAME,FPS,startframe,endframe,fontname,defaulttext):
+def writetimestamp(FPS,startframe,endframe,fontname,defaulttext):
     with open(ASS_FILENAME,'a',encoding="utf-8") as f:
         f.write("\nDialogue: 0,%s,%s,%s,,0,0,0,,%s"%(frame_to_time(startframe),frame_to_time(endframe),fontname,defaulttext))
-        
+
+#进度条显示        
 def progress_bar(frame_count):
     totaltime = clock.tick()
     if os.name == 'nt':
@@ -182,12 +183,11 @@ def progress_bar(frame_count):
 if __name__ == "__main__": 
     #修改终端标题
     ctypes.windll.kernel32.SetConsoleTitleW("omesis字幕轴自动生成")
-    SERIES_LENGTH = 16
+    SERIES_LENGTH = 16 #每隔16帧进行一次对比，32效果差而且速度并没有提高多少
     if os.name == 'nt':
         os.system("cls")
     global VIDEO_FILENAME,ASS_FILENAME
-    filelist = os.listdir()
-    mp4list = []
+    filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
     for filename in filelist:
         if filename[-4:] == '.mp4':
             print("已发现：%s"%filename)
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     ASS_FILENAME = "【自动生成】"+VIDEO_FILENAME[:-4]+'.ass'
     initial_ass()
     
-    #字型列表
+    #样式列表，可按需添加
     RAY = ACTOR(name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([174,163,215]),uph=np.array([180,170,245]),kernelsize=5,start_amount=2000,end_amount=1400)
     RIO = ACTOR(name='rio',fontname='rio字幕',defaulttext='【rio说：】',lowh=np.array([100,170,188]),uph=np.array([105,210,217]),kernelsize=5,start_amount=2000,end_amount=1400)
     BLACK = ACTOR(name='BLACK',fontname='加厚边框注释',defaulttext=r'{\bord8}【加厚边框注释】',lowh=np.array([0,0,14]),uph=np.array([179,40,46]),kernelsize=3,start_amount=9000,end_amount=6300)
@@ -242,11 +242,13 @@ if __name__ == "__main__":
     #收尾可能没结束的字幕
     for actor in ACTOR.actor_list:
         actor.allend(frame_count)
-
-    print("\n处理完成")
-    ctypes.windll.kernel32.SetConsoleTitleW("(处理完成)%s"%(VIDEO_FILENAME))
-    input('按Enter结束。。。')
         
     #释放资源
     cap.release()
     cv.destroyAllWindows()
+    
+    print("\n处理完成")
+    ctypes.windll.kernel32.SetConsoleTitleW("(处理完成)%s"%(VIDEO_FILENAME))
+    input('按Enter结束。。。')
+        
+
