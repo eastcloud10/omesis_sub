@@ -51,13 +51,16 @@ class ACTOR():
         self.bordlowh = bordlowh
         self.borduph = borduph
         self.type = type
-        ACTOR.actor_list.append(self)        
+        self.sub_count = 1
+        ACTOR.actor_list.append(self)
+        
 
     def dis_compare(self,frame_list, criteria=0,frame_count_of_list0=1):
         if len(frame_list) == 1:
             for st in self.startframelist:
                 if frame_count_of_list0 - st >= 30:
-                    writetimestamp(FPS,st,frame_count_of_list0,self.fontname,self.defaulttext)
+                    writetimestamp(FPS,st,frame_count_of_list0,self.fontname,self.defaulttext+str(self.sub_count))
+                    self.sub_count += 1
             self.startframelist=[]
             return
         mid_frame = frame_list[(len(frame_list)-1)//2]
@@ -92,7 +95,8 @@ class ACTOR():
         mask_omega_sum = cv.countNonZero(mask_omega)
         mask_new = cv.bitwise_and(mask_omega,cv.bitwise_not(self.mask_alpha))
         mask_new_sum = cv.countNonZero(mask_new)
-        mask_dis_sum = self.mask_alpha_sum + mask_new_sum - mask_omega_sum    
+        mask_dis = cv.bitwise_and(self.saved_mask,cv.bitwise_not(mask_omega))  
+        mask_dis_sum = cv.countNonZero(mask_dis)
         if (mask_dis_sum>self.end_amount):
             criteria = max(self.end_amount,int(mask_dis_sum*0.5))
             self.dis_compare(frame_list,criteria,frame_count_of_alpha+1)
@@ -218,19 +222,17 @@ class GRAY_ACTOR:
         self.saved_mask = ALLZEROS
         self.saved_pxs = 0
         self.sub_count = 1
-    def GRAY_check(self,hsv,previous_hsv,fc):
-        kernel = np.ones((5,5),np.uint8)
-        content_mask = cv.morphologyEx(cv.inRange(hsv,np.array([0,0,252]),np.array([255,6,255])), cv.MORPH_CLOSE, kernel)
+        self.kernel = np.ones((5,5),np.uint8)
+        self.lower_h = np.array([-10,-25,-143])
+        self.upper_h = np.array([10,7,-49])
+        self.white_lower_h = np.array([0,0,252])
+        self.white_upper_h = np.array([255,6,255])
+    def GRAY_check(self,hsv,previous_hsv,fc):        
         if len(self.startframelist)>0:
-            if DEBUG:
-                print('114514')
-                cv.imshow('overlapped', cv.resize(cv.bitwise_and(self.saved_mask, content_mask),None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                KEY= cv.waitKey(0)
-                if KEY == ord('q'):
-                    exit()
-            if cv.countNonZero(cv.bitwise_and(self.saved_mask, content_mask)) < self.saved_pxs//2:
+            content_mask = cv.morphologyEx(cv.inRange(hsv,self.white_lower_h,self.white_upper_h), cv.MORPH_CLOSE, self.kernel)
+            if cv.countNonZero(cv.bitwise_and(self.saved_mask, content_mask)) < (self.saved_pxs//2):
                 for st in self.startframelist:
-                    writetimestamp(FPS,st,fc,'边缘模糊注释',"{模糊%d}"%self.sub_count)
+                    writetimestamp(FPS,st,fc,'边缘模糊注释',"【边框模糊%d】"%self.sub_count)
                     self.sub_count += 1
                 self.startframelist = []
                 self.saved_mask = ALLZEROS
@@ -238,28 +240,23 @@ class GRAY_ACTOR:
         signhsv = np.array(hsv,np.int16)
         signprevious_hsv = np.array(previous_hsv,np.int16)
         minus = np.subtract(signhsv,signprevious_hsv)
-        lower_ray = np.array([-10,-25,-143])
-        upper_ray = np.array([10,7,-49])
-        mask = cv.inRange(minus,lower_ray,upper_ray)
+        mask = cv.inRange(minus,self.lower_h,self.upper_h)
         temp = np.array(mask,np.uint8)
-        bord = cv.morphologyEx(temp, cv.MORPH_OPEN, kernel)
+        bord = cv.morphologyEx(temp, cv.MORPH_OPEN, self.kernel)
         if cv.countNonZero(bord)<10000:
             return
+        content_mask = cv.morphologyEx(cv.inRange(hsv,self.white_lower_h,self.white_upper_h), cv.MORPH_CLOSE, self.kernel)
         bord_close = cv.morphologyEx(bord, cv.MORPH_BLACKHAT, BIG_KERNEL)
         confirmed_mask = cv.bitwise_and(content_mask,bord_close)
         confirmed_count = cv.countNonZero(confirmed_mask)
         if confirmed_count>20000:
             self.startframelist.append(fc)
-            if DEBUG:
-                print(len(self.startframelist))
-                input()
             self.saved_mask = confirmed_mask
             self.saved_pxs = confirmed_count
-            if DEBUG:
-                cv.imshow('mask', cv.resize(confirmed_mask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                KEY= cv.waitKey(0)
-                if KEY == ord('q'):
-                    exit()
+        return
+    def GRAY_END(self):
+        for st in self.startframelist:
+            writetimestamp(FPS,st,fc,'边缘模糊注释',"【模糊%d】"%self.sub_count)
         return
 
 if __name__ == "__main__": 
@@ -293,11 +290,11 @@ if __name__ == "__main__":
     initial_ass()
     
     #样式列表，可按需添加
-    RAY = ACTOR(name='ray',fontname='ray字幕',defaulttext='{ray说：}',lowh=np.array([173,163,219]),uph=np.array([178,173,230]), \
+    RAY = ACTOR(name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([173,163,219]),uph=np.array([178,173,230]), \
                 kernelsize=5,start_amount=2000,end_amount=5000, type=ACTOR.CONTENT_ONLY)
-    RIO = ACTOR(name='rio',fontname='rio字幕',defaulttext='{rio说：}',lowh=np.array([102,189,211]),uph=np.array([107,199,222]), \
+    RIO = ACTOR(name='rio',fontname='rio字幕',defaulttext='【rio说：】',lowh=np.array([102,189,211]),uph=np.array([107,199,222]), \
                 kernelsize=5,start_amount=2000,end_amount=5000, type=ACTOR.CONTENT_ONLY)
-    BLACK =ACTOR(name='BLACK',fontname='加厚边框注释',defaulttext=r'{\bord8}{黑边框文字}',lowh=np.array([0,0,252]),uph=np.array([255,6,255]), \
+    BLACK =ACTOR(name='BLACK',fontname='加厚边框注释',defaulttext=r'{\bord8}【黑边框文字】',lowh=np.array([0,0,252]),uph=np.array([255,6,255]), \
                 kernelsize=5,start_amount=20000,end_amount=20000, type=ACTOR.BORD,\
                 bordlowh=np.array([0,0,0]),borduph=np.array([255,255,43]))
     GRAY = GRAY_ACTOR()
