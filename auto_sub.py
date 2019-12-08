@@ -16,6 +16,7 @@ def round_kernel_generator(radius):
                 ret[x,y] = 0
     return ret
 ROUND_KERNEL = np.ones((89,89),np.uint8)
+BIG_KERNEL = round_kernel_generator(100)
 
 class TIME_it():
     def __init__(self):
@@ -63,8 +64,6 @@ class ACTOR():
         mask_mid = get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
         mask_dis = cv.bitwise_and(self.saved_mask,cv.bitwise_not(mask_mid))
         mask_dis_sum = cv.countNonZero(mask_dis)
-        if DEBUG:
-            print("FRAME %d mask_dis_sum:%d"%(frame_count_of_list0+(len(frame_list)-1)//2,mask_dis_sum))
         if mask_dis_sum > criteria:
             self.dis_compare(frame_list[:(len(frame_list)+1)//2],criteria,frame_count_of_list0)
         else:
@@ -82,8 +81,6 @@ class ACTOR():
         mask_mid = get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
         mask_new = cv.bitwise_and(mask_mid,cv.bitwise_not(self.mask_alpha))
         mask_new_sum = cv.countNonZero(mask_new)
-        if DEBUG:
-            print("FRAME %d mask_new_sum:%d"%(frame_count_of_list0+(len(frame_list)-1)//2,mask_new_sum))
         if mask_new_sum > criteria:
             self.app_compare(frame_list[:(len(frame_list)+1)//2],criteria,frame_count_of_list0)
         else:
@@ -124,17 +121,6 @@ def get_mask(type,hsvimg,lowerhsv,upperhsv,kernel,bordlowhsv=1,borduphsv=1,previ
         content_mask = cv.morphologyEx(cv.inRange(hsvimg,lowerhsv,upperhsv), cv.MORPH_CLOSE, kernel) 
         bord_close = cv.morphologyEx(bord_mask, cv.MORPH_BLACKHAT, ROUND_KERNEL)
         confirmed_mask = cv.bitwise_and(content_mask,bord_close)
-        if DEBUG:
-            if frame_count>2580:
-                print('')
-                cv.imshow('frame', cv.resize(cv.cvtColor(hsvimg,cv.COLOR_HSV2BGR),None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('bord_mask', cv.resize(bord_mask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('bord_close', cv.resize(bord_close,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('content_mask', cv.resize(content_mask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('confirmed_mask', cv.resize(confirmed_mask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                KEY= cv.waitKey(0)
-                if KEY == ord('q'):
-                    exit()
         return confirmed_mask
     
 #从帧数计算（该帧向前取整）的时间，返回的是字符串，第一帧为00:00.00
@@ -234,6 +220,21 @@ class GRAY_ACTOR:
         self.sub_count = 1
     def GRAY_check(self,hsv,previous_hsv,fc):
         kernel = np.ones((5,5),np.uint8)
+        content_mask = cv.morphologyEx(cv.inRange(hsv,np.array([0,0,252]),np.array([255,6,255])), cv.MORPH_CLOSE, kernel)
+        if len(self.startframelist)>0:
+            if DEBUG:
+                print('114514')
+                cv.imshow('overlapped', cv.resize(cv.bitwise_and(self.saved_mask, content_mask),None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                KEY= cv.waitKey(0)
+                if KEY == ord('q'):
+                    exit()
+            if cv.countNonZero(cv.bitwise_and(self.saved_mask, content_mask)) < self.saved_pxs//2:
+                for st in self.startframelist:
+                    writetimestamp(FPS,st,fc,'边缘模糊注释',"{模糊%d}"%self.sub_count)
+                    self.sub_count += 1
+                self.startframelist = []
+                self.saved_mask = ALLZEROS
+                self.saved_pxs = 0      
         signhsv = np.array(hsv,np.int16)
         signprevious_hsv = np.array(previous_hsv,np.int16)
         minus = np.subtract(signhsv,signprevious_hsv)
@@ -244,30 +245,18 @@ class GRAY_ACTOR:
         bord = cv.morphologyEx(temp, cv.MORPH_OPEN, kernel)
         if cv.countNonZero(bord)<10000:
             return
-        content_mask = cv.morphologyEx(cv.inRange(hsv,np.array([0,0,252]),np.array([255,4,255])), cv.MORPH_CLOSE, kernel)
-        if len(self.startframelist)>0:
-            if cv.countNonZero(cv.bitwise_and(self.saved_mask, content_mask)) < self.saved_pxs//2:
-                for st in self.startframelist:
-                    writetimestamp(FPS,st,fc,'边缘模糊注释',"{模糊%d00}"%self.sub_count)
-                    self.sub_count += 1
-                startframelist = []
-                saved_mask = ALLZEROS
-                saved_pxs = 0
-        bord_close = cv.morphologyEx(bord, cv.MORPH_BLACKHAT, ROUND_KERNEL)
+        bord_close = cv.morphologyEx(bord, cv.MORPH_BLACKHAT, BIG_KERNEL)
         confirmed_mask = cv.bitwise_and(content_mask,bord_close)
         confirmed_count = cv.countNonZero(confirmed_mask)
         if confirmed_count>20000:
             self.startframelist.append(fc)
+            if DEBUG:
+                print(len(self.startframelist))
+                input()
             self.saved_mask = confirmed_mask
             self.saved_pxs = confirmed_count
-        if DEBUG:
-            if frame_count>2032:
-                print('bord:%d,\tconfirmed_mask:%d'%(cv.countNonZero(bord),cv.countNonZero(confirmed_mask)))
-                cv.imshow('frame', cv.resize(cv.cvtColor(hsv,cv.COLOR_HSV2BGR),None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('bord_mask', cv.resize(bord,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('bord_close', cv.resize(bord_close,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('content_mask', cv.resize(content_mask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('confirmed_mask', cv.resize(confirmed_mask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+            if DEBUG:
+                cv.imshow('mask', cv.resize(confirmed_mask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 KEY= cv.waitKey(0)
                 if KEY == ord('q'):
                     exit()
@@ -342,8 +331,6 @@ if __name__ == "__main__":
             if frame_count%(10*SERIES_LENGTH) == SERIES_LENGTH-1:
                 progress_bar(frame_count)
         
-        
-
     #收尾可能没结束的字幕
     for actor in ACTOR.actor_list:
         actor.allend(frame_count)
