@@ -6,7 +6,7 @@ import time
 import ctypes
 import os
 
-os.name = 'bullshit'
+os.name = '123321'
 
 def round_kernel_generator(radius):
     ret = np.ones((2*radius+1,2*radius+1),np.uint8)
@@ -58,6 +58,9 @@ class ACTOR():
         ACTOR.actor_list.append(self)
         
         if self.type == ACTOR.DIFFERENTIAL:
+            '''
+            Very very time consuming
+            '''
             def differential_compare(frame_list,frame_count_of_list0):
                 mask_omega = get_mask(ACTOR.CONTENT_ONLY,frame_list[-1],self.lowh,self.uph,self.kernelsize)          
                 mask_omega_sum = cv.countNonZero(mask_omega)
