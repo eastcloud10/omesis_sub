@@ -54,7 +54,8 @@ def round_kernel_generator(radius):
             if (x-radius)**2 + (y-radius)**2 > radius**2:
                 ret[x,y] = 0
     return ret
-    
+ 
+ 
     
 if __name__ == "__main__": 
     filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
