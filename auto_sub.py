@@ -6,8 +6,6 @@ import time
 import ctypes
 import os
 
-os.name = '123321'
-
 def round_kernel_generator(radius):
     ret = np.ones((2*radius+1,2*radius+1),np.uint8)
     for x in range(2*radius+1):
@@ -36,12 +34,13 @@ class ACTOR():
         self.name = name
         self.lowh = lowh #HSV颜色空间的上、下界
         self.uph = uph
-        self.kernelsize = kernelsize #OPEN操作的框尺寸
+        self.kernel = np.ones((kernelsize,kernelsize),np.uint8)
         self.start_amount = start_amount
         self.end_amount = end_amount
         self.previous_mask = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
         self.previous_mask_sum = 0
         self.startframelist =[]
+        self.saved_mask = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
         self.mask_alpha = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
         self.mask_alpha_sum = 0
         self.fontname = fontname
@@ -49,101 +48,54 @@ class ACTOR():
         self.bordlowh = bordlowh
         self.borduph = borduph
         self.type = type
-        
-        if self.type == ACTOR.DIFFERENTIAL:
-            self.mask2_alpha = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
-            self.mask2_alpha_sum = 0
-            self.frame_minusone = np.zeros((1080,1920,3))
-            self.saved_mask = []
-        ACTOR.actor_list.append(self)
-        
-        if self.type == ACTOR.DIFFERENTIAL:
-            '''
-            Very very time consuming
-            '''
-            def differential_compare(frame_list,frame_count_of_list0):
-                mask_omega = get_mask(ACTOR.CONTENT_ONLY,frame_list[-1],self.lowh,self.uph,self.kernelsize)          
-                mask_omega_sum = cv.countNonZero(mask_omega)
-                mask_new = cv.bitwise_and(mask_omega,cv.bitwise_xor(mask_omega,self.mask_alpha))
-                mask_new_sum = cv.countNonZero(mask_new)
-                mask_dis_sum = self.mask_alpha_sum + mask_new_sum - mask_omega_sum 
-                self.mask_alpha = mask_omega 
-                self.mask_alpha_sum = mask_omega_sum 
-                
-                if mask_new_sum < 15000 and mask_dis_sum <15000:
-                    return
-                for i in range(len(frame_list)):
-                    if i == 0:
-                        mask = get_mask(self.type,frame_list[0],self.lowh,self.uph,self.kernelsize,bordlowhsv=self.bordlowh,borduphsv=self.borduph,previous_hsvimg=self.frame_minusone)
-                    else:
-                        mask = get_mask(self.type,frame_list[i],self.lowh,self.uph,self.kernelsize,bordlowhsv=self.bordlowh,borduphsv=self.borduph,previous_hsvimg=frame_list[i-1])
-                    if len(self.saved_mask)>0:
-                        for j in range(len(self.saved_mask)):
-                            check = cv.countNonZero(\
-                                       cv.bitwise_and(\
-                                       self.saved_mask[j],\
-                                       get_mask(ACTOR.CONTENT_ONLY,frame_list[i],self.lowh,self.uph,self.kernelsize)\
-                                       ))
-                            if check>self.end_amount:
-                                for st in self.startframelist:
-                                    if frame_count_of_list0 - st >= 30:
-                                        writetimestamp(FPS,st,frame_count_of_list0,self.fontname,self.defaulttext)
-                                self.startframelist=[]
-                                self.saved_mask = []
-                                break
-                    if cv.countNonZero(mask) > self.start_amount:
-                        self.startframelist.append(frame_count_of_list0+i)
-                        self.saved_mask.append(mask)
-                        break
-                self.frame_minusone = frame_list[-1]
-                return
-            self.rough_compare = differential_compare
+        ACTOR.actor_list.append(self)        
 
-    def deep_compare(self,frame_list, criteria_new=0, criteria_dis=0,frame_count_of_list0=1):
+    def dis_compare(self,frame_list, criteria=0,frame_count_of_list0=1):
         if len(frame_list) == 1:
-            if criteria_dis:
-                for st in self.startframelist:
-                    if frame_count_of_list0 - st >= 30:
-                        writetimestamp(FPS,st,frame_count_of_list0,self.fontname,self.defaulttext)
-                self.startframelist=[]
-            if criteria_new:
-                if len(self.startframelist)>0:
-                    if frame_count_of_list0 - self.startframelist[-1] < 60:
-                        return
-                self.startframelist.append(frame_count_of_list0)
+            for st in self.startframelist:
+                if frame_count_of_list0 - st >= 30:
+                    writetimestamp(FPS,st,frame_count_of_list0,self.fontname,self.defaulttext)
+            self.startframelist=[]
             return
         mid_frame = frame_list[(len(frame_list)-1)//2]
-        mask_mid = get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernelsize)
-        if criteria_dis:
-            mask_dis = cv.bitwise_and(self.mask_alpha,cv.bitwise_xor(self.mask_alpha,mask_mid))
-            mask_dis_sum = cv.countNonZero(mask_dis)
-            if mask_dis_sum > criteria_dis:
-                self.deep_compare(frame_list[:(len(frame_list)+1)//2],0,criteria_dis,frame_count_of_list0)
-            else:
-                self.deep_compare(frame_list[(len(frame_list)+1)//2:],0,criteria_dis,frame_count_of_list0+(len(frame_list)+1)//2)
-        if criteria_new:
-            mask_new = cv.bitwise_and(mask_mid,cv.bitwise_xor(mask_mid,self.mask_alpha))
-            mask_new_sum = cv.countNonZero(mask_new)
-            if mask_new_sum > criteria_new:
-                self.deep_compare(frame_list[:(len(frame_list)+1)//2],criteria_new,0,frame_count_of_list0)
-            else:
-                self.deep_compare(frame_list[(len(frame_list)+1)//2:],criteria_new,0,frame_count_of_list0+(len(frame_list)+1)//2)
+        mask_mid = get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel)
+        mask_dis = cv.bitwise_and(self.saved_mask,cv.bitwise_not(mask_mid))
+        mask_dis_sum = cv.countNonZero(mask_dis)
+        if mask_dis_sum > criteria:
+            self.dis_compare(frame_list[:(len(frame_list)+1)//2],criteria,frame_count_of_list0)
+        else:
+            self.dis_compare(frame_list[(len(frame_list)+1)//2:],criteria,frame_count_of_list0+(len(frame_list)+1)//2)
+                
+    def app_compare(self,frame_list, criteria=0,frame_count_of_list0=1):
+        if len(frame_list) == 1:
+            if len(self.startframelist)>0:
+                if frame_count_of_list0 - self.startframelist[-1] < 60:
+                    return
+            self.startframelist.append(frame_count_of_list0)
+            self.saved_mask = get_mask(self.type,frame_list[0],self.lowh,self.uph,self.kernel)
+            return
+        mid_frame = frame_list[(len(frame_list)-1)//2]
+        mask_mid = get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel)
+        mask_new = cv.bitwise_and(mask_mid,cv.bitwise_not(self.mask_alpha))
+        mask_new_sum = cv.countNonZero(mask_new)
+        if mask_new_sum > criteria:
+            self.app_compare(frame_list[:(len(frame_list)+1)//2],criteria,frame_count_of_list0)
+        else:
+            self.app_compare(frame_list[(len(frame_list)+1)//2:],criteria,frame_count_of_list0+(len(frame_list)+1)//2)
     
     def rough_compare(self,frame_list,frame_count_of_alpha): #每隔16帧进行一次比对
         criteria_dis,criteria_new = 0,0
-        mask_omega = get_mask(self.type,frame_list[-1],self.lowh,self.uph,self.kernelsize,self.bordlowh,self.borduph)          
+        mask_omega = get_mask(self.type,frame_list[-1],self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)          
         mask_omega_sum = cv.countNonZero(mask_omega)
-        mask_new = cv.bitwise_and(mask_omega,cv.bitwise_xor(mask_omega,self.mask_alpha))
+        mask_new = cv.bitwise_and(mask_omega,cv.bitwise_not(self.mask_alpha))
         mask_new_sum = cv.countNonZero(mask_new)
         mask_dis_sum = self.mask_alpha_sum + mask_new_sum - mask_omega_sum    
-        
         if (mask_dis_sum>self.end_amount):
-            criteria_dis = mask_dis_sum//2
+            criteria = max(self.end_amount,int(mask_dis_sum*0.8))
+            self.dis_compare(frame_list,criteria,frame_count_of_alpha+1)
         if (mask_new_sum>self.start_amount):
-            criteria_new = mask_new_sum//2
-        if criteria_dis+criteria_new>0:
-            print('\ntime:'+str(frame_to_time(frame_count_of_alpha))+' '+self.name+"into deep search,app:"+str(mask_new_sum)+",dis:"+str(mask_dis_sum))
-            self.deep_compare(frame_list,criteria_new,criteria_dis,frame_count_of_alpha+1) #如果发现新出现或消失，则使用二分法定位改变帧
+            criteria = max(self.start_amount,int(mask_new_sum*0.8))
+            self.app_compare(frame_list,criteria,frame_count_of_alpha+1)
         self.mask_alpha = mask_omega 
         self.mask_alpha_sum = mask_omega_sum
         return
@@ -153,34 +105,22 @@ class ACTOR():
             writetimestamp(FPS,st,frame_count,self.fontname,self.defaulttext)
         
 #根据范围取mask
-def get_mask(type,hsvimg,lowerhsv,upperhsv,kernelsize,bordlowhsv=1,borduphsv=1,previous_hsvimg=1): #在HSV颜色空间判断字幕像素点
+def get_mask(type,hsvimg,lowerhsv,upperhsv,kernel,bordlowhsv=1,borduphsv=1,previous_hsvimg=1): #在HSV颜色空间判断字幕像素点
     if type == ACTOR.CONTENT_ONLY:
         got_mask = cv.inRange(hsvimg,lowerhsv,upperhsv)
-        res = cv.inRange(hsvimg,lowerhsv,upperhsv)
-        if kernelsize > 0:
-            res = cv.morphologyEx(got_mask, cv.MORPH_OPEN, np.ones((kernelsize,kernelsize),np.uint8)) #OPEN操作，消除噪点
-        return res
+        temp = cv.morphologyEx(got_mask, cv.MORPH_OPEN, kernel) #OPEN操作，消除噪点
+        if cv.countNonZero(got_mask)<10000:
+            return ALLZEROS
+        res = cv.morphologyEx(temp, cv.MORPH_CLOSE, ROUND_KERNEL) #补洞
+        return got_mask
     if type == ACTOR.BORD:
-        bord_mask = cv.morphologyEx(cv.inRange(hsvimg,bordlowhsv,borduphsv), cv.MORPH_OPEN, np.ones((5,5),np.uint8))
-        content_mask = cv.inRange(hsvimg,lowerhsv,upperhsv)
-        confirmed_mask = cv.bitwise_and(content_mask,cv.morphologyEx(bord_mask, cv.MORPH_CLOSE, ROUND_KERNEL))
+        bord_mask = cv.morphologyEx(cv.inRange(hsvimg,bordlowhsv,borduphsv), cv.MORPH_OPEN, kernel)
+        if cv.countNonZero(bord_mask)<10000:
+            return ALLZEROS
+        bord_inside = cv.morphologyEx(bord_mask, cv.MORPH_BLACKHAT, ROUND_KERNEL)
+        content_mask = cv.morphologyEx(cv.inRange(hsvimg,lowerhsv,upperhsv), cv.MORPH_CLOSE, kernel) 
+        confirmed_mask = cv.bitwise_and(content_mask,bord_inside)
         return confirmed_mask
-    if type == ACTOR.DIFFERENTIAL:
-        signhsv = np.array(hsvimg,np.int16)
-        signprevious_hsv = np.array(previous_hsvimg,np.int16)
-        minus = np.subtract(signhsv,signprevious_hsv)
-        lower_difference = bordlowhsv
-        upper_difference = borduphsv
-        mask = cv.inRange(minus,lower_difference,upper_difference)
-        temp = np.array(mask,np.uint8)
-        if cv.countNonZero(temp)>15000:
-            return np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
-        else:
-            bord_mask = cv.morphologyEx(temp, cv.MORPH_OPEN, np.ones((5,5),np.uint8))
-            content_mask = cv.inRange(hsvimg,lowerhsv,upperhsv)
-            confirmed_mask = cv.bitwise_and(content_mask,cv.morphologyEx(bord_mask, cv.MORPH_CLOSE, ROUND_KERNEL))
-            KEY= cv.waitKey(0)   
-            return confirmed_mask
     
 #从帧数计算（该帧向前取整）的时间，返回的是字符串，第一帧为00:00.00
 def frame_to_time(fc): #由于浮点数误差，对60帧和59.94帧特化
@@ -292,26 +232,25 @@ if __name__ == "__main__":
     #载入视频
     cap = cv.VideoCapture(VIDEO_FILENAME,cv.CAP_FFMPEG) #打开视频
     print('成功读取视频')
-    global FPS,TOTAL_FRAMES,WIDTH,HEIGHT
+    global FPS,TOTAL_FRAMES,WIDTH,HEIGHT,ALLZEROS
+
     FPS = cap.get(cv.CAP_PROP_FPS)                      #帧率
     TOTAL_FRAMES = cap.get(cv.CAP_PROP_FRAME_COUNT)          #总帧数
     WIDTH = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-    HEIGHT = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))    
+    HEIGHT = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))  
+    ALLZEROS = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
 
     ASS_FILENAME = "【自动生成】"+VIDEO_FILENAME[:-4]+'.ass'
     initial_ass()
     
     #样式列表，可按需添加
     RAY = ACTOR(name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([173,163,219]),uph=np.array([178,173,230]), \
-                kernelsize=5,start_amount=2000,end_amount=1000, type=ACTOR.CONTENT_ONLY)
+                kernelsize=5,start_amount=12000,end_amount=10000, type=ACTOR.CONTENT_ONLY)
     RIO = ACTOR(name='rio',fontname='rio字幕',defaulttext='【rio说：】',lowh=np.array([102,192,213]),uph=np.array([106,196,220]), \
-                kernelsize=5,start_amount=2000,end_amount=1000, type=ACTOR.CONTENT_ONLY)
+                kernelsize=5,start_amount=12000,end_amount=10000, type=ACTOR.CONTENT_ONLY)
     BLACK =ACTOR(name='BLACK',fontname='加厚边框注释',defaulttext=r'{\bord8}【加厚边框注释】',lowh=np.array([0,0,252]),uph=np.array([255,6,255]), \
-                kernelsize=5,start_amount=15000,end_amount=12000, type=ACTOR.BORD,\
+                kernelsize=5,start_amount=20000,end_amount=20000, type=ACTOR.BORD,\
                 bordlowh=np.array([1,5,1]),borduph=np.array([255,255,43]))
-    GRAY = ACTOR(name='GRAY',fontname='边缘模糊注释',defaulttext=r'{\blur5}【边缘模糊文字】',lowh=np.array([0,0,252]),uph=np.array([255,4,255]), \
-                kernelsize=5,start_amount=5000,end_amount=5000, type=ACTOR.DIFFERENTIAL,\
-                bordlowh=np.array([-10,-25,-143]),borduph=np.array([10,7,-49]))
     
     #进度条
     print("----------")

@@ -23,8 +23,8 @@ def RIO_mask(hsv):
     return res
     
 def BLACK_mask(hsv):
-    lower_ray = np.array([1,179,100])
-    upper_ray = np.array([255,231,140])
+    lower_ray = np.array([1,5,1])
+    upper_ray = np.array([255,255,43])
     mask = cv.inRange(hsv,lower_ray,upper_ray)
     res = mask
     res = cv.morphologyEx(mask, cv.MORPH_OPEN, np.ones((5,5),np.uint8))
@@ -80,9 +80,9 @@ if __name__ == "__main__":
             print("Can't receive frame (stream end?). Exiting ...")
             break
         frame_count += 1
-        print(frame_count)        
-        if frame_count > 2030:
-            hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+        print(frame_count)      
+        hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+        if frame_count >590:            
             small_img=cv.resize(img,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA)
             GRAYmask=GRAY_mask(previous_hsv, hsv)
             RAYmask=RAY_mask(hsv)
@@ -112,7 +112,7 @@ if __name__ == "__main__":
                     break               
                 elif KEY == ord('c'):
                     cv.imwrite("%s.bmp"%str(frame_count),img)
-            previous_hsv = hsv
+        previous_hsv = hsv
             
     cap.release()
     cv.destroyAllWindows()        
