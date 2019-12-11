@@ -5,6 +5,8 @@ import cv2 as cv
 import time
 import ctypes
 import os
+from dataclasses import dataclass, field
+from typing import List
 DEBUG = False
 if DEBUG:
     os.name = 'DEBUG'
@@ -24,91 +26,106 @@ class TIME_it():
         self.ticktime = self.starttime
     def tick(self):
         return time.time() - self.starttime
-class ACTOR():
+
+@dataclass
+class frame_and_position:
+    hsv: np.array
+    frame_count: int
+    
+
+@dataclass
+class frameinfo:
+    frame_count: int
+    start_mask: np.array
+    start_mask_count: int
+
+@dataclass
+class ACTOR:
     CONTENT_ONLY = 1
     BORD = 2
     DIFFERENTIAL = 3
     actor_list = []
+    
+    name: str='ray'
+    fontname: str='ray字幕'
+    defaulttext: str='【ray说：】'
+    lowh: np.array=np.array([0,0,0])
+    uph: np.array=np.array([180,255,255])
+    kernelsize: int=5
+    start_amount: int=1200
+    end_ratio: float=0.5
+    type: int= CONTENT_ONLY
+    bordlowh: np.array=np.array([0,0,0])
+    borduph: np.array=np.array([180,255,255])
+    startframelist: List[frameinfo] = field(default_factory=list)
 
-    def __init__(self,name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([0,0,0]),uph=np.array([180,255,255]),kernelsize=5, \
-                start_amount=1200,end_amount=1000, \
-                type = CONTENT_ONLY, \
-                bordlowh=np.array([0,0,0]),borduph=np.array([180,255,255]), **kwargs):
-        self.name = name
-        self.lowh = lowh #HSV颜色空间的上、下界
-        self.uph = uph
-        self.kernel = np.ones((kernelsize,kernelsize),np.uint8)
-        self.start_amount = start_amount
-        self.end_amount = end_amount
-        self.previous_mask = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
-        self.previous_mask_sum = 0
-        self.startframelist =[]
-        self.saved_mask = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
-        self.mask_alpha = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
+    
+    def __post_init__(self):
+        self.kernel = np.ones((self.kernelsize,self.kernelsize),np.uint8)
+        self.mask_alpha = ALLZEROS
         self.mask_alpha_sum = 0
-        self.fontname = fontname
-        self.defaulttext = defaulttext #默认文本
-        self.bordlowh = bordlowh
-        self.borduph = borduph
-        self.type = type
-        self.sub_count = 1
-        ACTOR.actor_list.append(self)
-        
+        self.sub_count = 0
+        ACTOR.actor_list.append(self)        
 
-    def dis_compare(self,frame_list, criteria=0,frame_count_of_list0=1):
+    def dis_compare(self,frame_list, criteria=0,position=0):
         if len(frame_list) == 1:
-            for st in self.startframelist:
-                if frame_count_of_list0 - st >= 30:
-                    writetimestamp(FPS,st,frame_count_of_list0,self.fontname,self.defaulttext+str(self.sub_count))
-                    self.sub_count += 1
-            self.startframelist=[]
+            startframecount = self.startframelist[position].frame_count
+            if frame_list[0].frame_count - startframecount >= 30:
+                self.sub_count += 1
+                writetimestamp(FPS,startframecount,frame_list[0].frame_count,self.fontname,self.defaulttext+str(self.sub_count))
+            self.startframelist.pop(position)
             return
-        mid_frame = frame_list[(len(frame_list)-1)//2]
+        mid_frame = frame_list[(len(frame_list)-1)//2].hsv
         mask_mid = get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
-        mask_dis = cv.bitwise_and(self.saved_mask,cv.bitwise_not(mask_mid))
+        mask_dis = cv.bitwise_and(self.startframelist[position].start_mask,cv.bitwise_not(mask_mid))
         mask_dis_sum = cv.countNonZero(mask_dis)
         if mask_dis_sum > criteria:
-            self.dis_compare(frame_list[:(len(frame_list)+1)//2],criteria,frame_count_of_list0)
+            self.dis_compare(frame_list[:(len(frame_list)+1)//2],criteria,position)
         else:
-            self.dis_compare(frame_list[(len(frame_list)+1)//2:],criteria,frame_count_of_list0+(len(frame_list)+1)//2)
+            self.dis_compare(frame_list[(len(frame_list)+1)//2:],criteria,position)
                 
-    def app_compare(self,frame_list, criteria=0,frame_count_of_list0=1):
+    def app_compare(self,frame_list, criteria=0):
         if len(frame_list) == 1:
             if len(self.startframelist)>0:
-                if frame_count_of_list0 - self.startframelist[-1] < 60:
+                if frame_list[0].frame_count - self.startframelist[-1].frame_count < 60:
                     return
-            self.startframelist.append(frame_count_of_list0)
-            self.saved_mask = get_mask(self.type,frame_list[0],self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
+            confirmed_mask = get_mask(self.type,frame_list[0].hsv,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
+            self.startframelist.append(frameinfo(frame_count = frame_list[0].frame_count, \
+                                        start_mask = confirmed_mask, \
+                                        start_mask_count = cv.countNonZero(confirmed_mask)))
             return
-        mid_frame = frame_list[(len(frame_list)-1)//2]
+        mid_frame = frame_list[(len(frame_list)-1)//2].hsv
         mask_mid = get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
         mask_new = cv.bitwise_and(mask_mid,cv.bitwise_not(self.mask_alpha))
         mask_new_sum = cv.countNonZero(mask_new)
         if mask_new_sum > criteria:
-            self.app_compare(frame_list[:(len(frame_list)+1)//2],criteria,frame_count_of_list0)
+            self.app_compare(frame_list[:(len(frame_list)+1)//2],criteria)
         else:
-            self.app_compare(frame_list[(len(frame_list)+1)//2:],criteria,frame_count_of_list0+(len(frame_list)+1)//2)
+            self.app_compare(frame_list[(len(frame_list)+1)//2:],criteria)
     
-    def rough_compare(self,frame_list,frame_count_of_alpha): #每隔16帧进行一次比对
-        criteria_dis,criteria_new = 0,0
-        mask_omega = get_mask(self.type,frame_list[-1],self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)          
+    def rough_compare(self,frame_list): #每隔16帧进行一次比对
+        mask_omega = get_mask(self.type,frame_list[-1].hsv,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)          
         mask_omega_sum = cv.countNonZero(mask_omega)
+        
+        if len(self.startframelist)>0:
+            for i in list(range(len(self.startframelist)))[::-1]:
+                mask_dis = cv.bitwise_and(self.startframelist[i].start_mask,cv.bitwise_not(mask_omega))  
+                mask_dis_sum = cv.countNonZero(mask_dis)
+                criteria = int(self.startframelist[i].start_mask_count*self.end_ratio)
+                if (mask_dis_sum>criteria):
+                    self.dis_compare(frame_list,criteria,i)
+            
         mask_new = cv.bitwise_and(mask_omega,cv.bitwise_not(self.mask_alpha))
-        mask_new_sum = cv.countNonZero(mask_new)
-        mask_dis = cv.bitwise_and(self.saved_mask,cv.bitwise_not(mask_omega))  
-        mask_dis_sum = cv.countNonZero(mask_dis)
-        if (mask_dis_sum>self.end_amount):
-            criteria = max(self.end_amount,int(mask_dis_sum*0.5))
-            self.dis_compare(frame_list,criteria,frame_count_of_alpha+1)
+        mask_new_sum = cv.countNonZero(mask_new)            
         if (mask_new_sum>self.start_amount):
-            criteria = max(self.start_amount,int(mask_new_sum*0.5))
-            self.app_compare(frame_list,criteria,frame_count_of_alpha+1)
+            criteria = int(mask_new_sum//2)
+            self.app_compare(frame_list,criteria)
         self.mask_alpha = mask_omega 
         self.mask_alpha_sum = mask_omega_sum
         return
     
     def allend(self,frame_count): #收尾可能没结束的字幕
-        for st in self.startframelist:
+        for st,start_mask,start_mask_count in self.startframelist:
             writetimestamp(FPS,st,frame_count,self.fontname,self.defaulttext)
         
 #根据范围取mask
@@ -206,8 +223,8 @@ def progress_bar(frame_count):
     totaltime = clock.tick()
     if os.name == 'nt':
         os.system("cls")
+        ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)%s"%(100*frame_count/TOTAL_FRAMES,VIDEO_FILENAME))
     print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
-    ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)%s"%(100*frame_count/TOTAL_FRAMES,VIDEO_FILENAME))
     print("已处理帧数： %d"%frame_count)
     print("已处理至：%s"%(frame_to_time(frame_count)))
     print("已用时间 %d秒"%totaltime)
@@ -216,27 +233,25 @@ def progress_bar(frame_count):
     print("预计剩余时间：%d分%d秒"%(time_left/60,time_left%60))
     print("--------") #进度条
     
+@dataclass
 class GRAY_ACTOR:
-    def __init__(self):
-        self.startframelist = []
-        self.saved_mask = ALLZEROS
-        self.saved_pxs = 0
-        self.sub_count = 1
-        self.kernel = np.ones((5,5),np.uint8)
-        self.lower_h = np.array([-10,-25,-143])
-        self.upper_h = np.array([10,7,-49])
-        self.white_lower_h = np.array([0,0,252])
-        self.white_upper_h = np.array([255,6,255])
+    startframelist: List[frameinfo] = field(default_factory=list)
+    lower_h: np.array = np.array([-10,-25,-143])
+    upper_h: np.array = np.array([10,7,-49])
+    white_lower_h: np.array = np.array([0,0,252])
+    white_upper_h: np.array = np.array([255,6,255])
+    kernel: np.array = np.ones((5,5),np.uint8)
+    sub_count: int = 0
+
     def GRAY_check(self,hsv,previous_hsv,fc):        
         if len(self.startframelist)>0:
-            content_mask = cv.morphologyEx(cv.inRange(hsv,self.white_lower_h,self.white_upper_h), cv.MORPH_CLOSE, self.kernel)
-            if cv.countNonZero(cv.bitwise_and(self.saved_mask, content_mask)) < (self.saved_pxs//2):
-                for st in self.startframelist:
-                    writetimestamp(FPS,st,fc,'边缘模糊注释',"【边框模糊%d】"%self.sub_count)
+            for i in list(range(len(self.startframelist)))[::-1]:
+                content_mask = cv.morphologyEx(cv.inRange(hsv,self.white_lower_h,self.white_upper_h), cv.MORPH_CLOSE, self.kernel)
+                if cv.countNonZero(cv.bitwise_and(self.startframelist[i].start_mask, content_mask)) < (self.startframelist[i].start_mask_count//2):
+                    st = self.startframelist[i].frame_count
                     self.sub_count += 1
-                self.startframelist = []
-                self.saved_mask = ALLZEROS
-                self.saved_pxs = 0      
+                    writetimestamp(FPS,st,fc,'边缘模糊注释',"【模糊%d】"%self.sub_count)
+                    self.startframelist.pop(i)  
         signhsv = np.array(hsv,np.int16)
         signprevious_hsv = np.array(previous_hsv,np.int16)
         minus = np.subtract(signhsv,signprevious_hsv)
@@ -250,21 +265,19 @@ class GRAY_ACTOR:
         confirmed_mask = cv.bitwise_and(content_mask,bord_close)
         confirmed_count = cv.countNonZero(confirmed_mask)
         if confirmed_count>20000:
-            self.startframelist.append(fc)
-            self.saved_mask = confirmed_mask
-            self.saved_pxs = confirmed_count
+            self.startframelist.append(frameinfo(frame_count = fc,start_mask = confirmed_mask,start_mask_count = confirmed_count))
         return
     def GRAY_END(self):
-        for st in self.startframelist:
+        for st,start_mask,start_mask_count in self.startframelist:
             writetimestamp(FPS,st,fc,'边缘模糊注释',"【模糊%d】"%self.sub_count)
         return
 
 if __name__ == "__main__": 
-    #修改终端标题
-    ctypes.windll.kernel32.SetConsoleTitleW("omesis字幕轴自动生成")
+    #修改终端标题    
     SERIES_LENGTH = 16 #每隔16帧进行一次对比
     if os.name == 'nt':
         os.system("cls")
+        ctypes.windll.kernel32.SetConsoleTitleW("omesis字幕轴自动生成")
     global VIDEO_FILENAME,ASS_FILENAME
     filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
     for filename in filelist:
@@ -291,13 +304,18 @@ if __name__ == "__main__":
     
     #样式列表，可按需添加
     RAY = ACTOR(name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([173,163,219]),uph=np.array([178,173,230]), \
-                kernelsize=5,start_amount=2000,end_amount=5000, type=ACTOR.CONTENT_ONLY)
+                kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
     RIO = ACTOR(name='rio',fontname='rio字幕',defaulttext='【rio说：】',lowh=np.array([102,189,211]),uph=np.array([107,199,222]), \
-                kernelsize=5,start_amount=2000,end_amount=5000, type=ACTOR.CONTENT_ONLY)
+                kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
     BLACK =ACTOR(name='BLACK',fontname='加厚边框注释',defaulttext=r'{\bord8}【黑边框文字】',lowh=np.array([0,0,252]),uph=np.array([255,6,255]), \
-                kernelsize=5,start_amount=20000,end_amount=20000, type=ACTOR.BORD,\
+                kernelsize=5,start_amount=20000,end_ratio = 0.5, type=ACTOR.BORD,\
                 bordlowh=np.array([0,0,0]),borduph=np.array([255,255,43]))
     GRAY = GRAY_ACTOR()
+    
+    PONPOKO = ACTOR(name='ponpoko',fontname='ponpoko字幕',defaulttext='【ponpoko说：】',lowh=np.array([56,178,189]),uph=np.array([67,193,207]), \
+                kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
+    PEANUTS = ACTOR(name='peanuts',fontname='peanuts字幕',defaulttext='【peanuts说：】',lowh=np.array([4,188,233]),uph=np.array([12,196,248]), \
+                kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
     #进度条
     global frame_count
     print("----------")
@@ -315,13 +333,13 @@ if __name__ == "__main__":
         hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
         
         #GRAY
-        period_frames.append(hsv)
+        period_frames.append(frame_and_position(hsv=hsv,frame_count=frame_count))
         GRAY.GRAY_check(hsv,previoushsv,frame_count)
         previoushsv = hsv
         
         if frame_count%SERIES_LENGTH == SERIES_LENGTH-1:
             for actor in ACTOR.actor_list:
-                actor.rough_compare(period_frames,alpha_frame_count)
+                actor.rough_compare(period_frames)
             alpha_frame_count = frame_count
             period_frames = []
             print('|',end='',flush=True)
@@ -331,13 +349,14 @@ if __name__ == "__main__":
     #收尾可能没结束的字幕
     for actor in ACTOR.actor_list:
         actor.allend(frame_count)
+    GRAY.GRAY_END()
         
     #释放资源
     cap.release()
     cv.destroyAllWindows()
     
     print("\n处理完成")
-    ctypes.windll.kernel32.SetConsoleTitleW("(处理完成)%s"%(VIDEO_FILENAME))
+    if os.name == 'nt':
+        ctypes.windll.kernel32.SetConsoleTitleW("(处理完成)%s"%(VIDEO_FILENAME))
     input('按Enter结束。。。')
-        
 

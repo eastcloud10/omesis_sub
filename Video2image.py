@@ -6,6 +6,22 @@ import cv2 as cv
 import os
 from auto_sub import frame_to_time 
 
+def PPK_mask(hsv):
+    lower_ray = np.array([56,178,189])
+    upper_ray = np.array([67,193,207])
+    mask = cv.inRange(hsv,lower_ray,upper_ray)
+    res = mask
+    #res = cv.morphologyEx(mask, cv.MORPH_OPEN, np.ones((5,5),np.uint8))
+    return res
+    
+def PNT_mask(hsv):
+    lower_ray = np.array([4,188,233])
+    upper_ray = np.array([12,196,248])
+    mask = cv.inRange(hsv,lower_ray,upper_ray)
+    res = mask
+    #res = cv.morphologyEx(mask, cv.MORPH_OPEN, np.ones((5,5),np.uint8))
+    return res
+    
 def RAY_mask(hsv):
     lower_ray = np.array([173,163,219])
     upper_ray = np.array([178,173,230])
@@ -83,31 +99,36 @@ if __name__ == "__main__":
         frame_count += 1
         print(frame_count)      
         hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-        if frame_count >590:            
+        if frame_count%30 == 29:            
             small_img=cv.resize(img,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA)
-            GRAYmask=GRAY_mask(previous_hsv, hsv)
-            RAYmask=RAY_mask(hsv)
-            RIOmask=RIO_mask(hsv)
-            BLACKmask=BLACK_mask(hsv)
-            WHITEmask=WHITE_mask(hsv)
-            BLACKclosemask = cv.bitwise_xor(BLACKmask, cv.morphologyEx(BLACKmask, cv.MORPH_CLOSE, round_kernel))
-            BLACK_sur_WHITE = cv.bitwise_and(BLACKclosemask,WHITEmask)                
-            if True:
-                GRAYclosemask = cv.morphologyEx(GRAYmask, cv.MORPH_CLOSE, round_kernel)
-                GRAY_sur_WHITE = cv.bitwise_and(GRAYclosemask,WHITEmask)  
+            #GRAYmask=GRAY_mask(previous_hsv, hsv)
+            #RAYmask=RAY_mask(hsv)
+            #RIOmask=RIO_mask(hsv)
+            #BLACKmask=BLACK_mask(hsv)
+            #WHITEmask=WHITE_mask(hsv)
+            PPKmask=PPK_mask(hsv)
+            PNTmask=PNT_mask(hsv)
+            #BLACKclosemask = cv.bitwise_xor(BLACKmask, cv.morphologyEx(BLACKmask, cv.MORPH_CLOSE, round_kernel))
+            #BLACK_sur_WHITE = cv.bitwise_and(BLACKclosemask,WHITEmask)                
+            if cv.countNonZero(PPKmask) + cv.countNonZero(PNTmask) > 5000:
+                #GRAYclosemask = cv.morphologyEx(GRAYmask, cv.MORPH_CLOSE, round_kernel)
+                #GRAY_sur_WHITE = cv.bitwise_and(GRAYclosemask,WHITEmask)  
                 cv.imshow('frame', small_img)
-                cv.imshow('gray', cv.resize(GRAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('ray', cv.resize(RAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
-                cv.imshow('rio', cv.resize(RIOmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('black',cv.resize(BLACKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('white',cv.resize(WHITEmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('BLACK_close_40',cv.resize(BLACKclosemask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow("BLACK close and white",cv.resize(BLACK_sur_WHITE,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow('GRAY_close_40',cv.resize(GRAYclosemask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow("GRAY close and white",cv.resize(GRAY_sur_WHITE,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                cv.imshow('ponpoko', cv.resize(PPKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
+                cv.imshow('peanuts', cv.resize(PNTmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                #cv.imshow('gray', cv.resize(GRAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                #cv.imshow('ray', cv.resize(RAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
+                #cv.imshow('rio', cv.resize(RIOmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                #cv.imshow('black',cv.resize(BLACKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                #cv.imshow('white',cv.resize(WHITEmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                #cv.imshow('BLACK_close_40',cv.resize(BLACKclosemask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                #cv.imshow("BLACK close and white",cv.resize(BLACK_sur_WHITE,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                #cv.imshow('GRAY_close_40',cv.resize(GRAYclosemask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                #cv.imshow("GRAY close and white",cv.resize(GRAY_sur_WHITE,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 print("Frame count:%d"%frame_count)
-                print("RAY pxs:%d\tRIO pxs:%d\tBLACK pxs:%d"%(cv.countNonZero(RAYmask),cv.countNonZero(RIOmask),cv.countNonZero(BLACKmask)))
-                print("gray pxs:%d,white pxs:%d,GRAY_and_white:%d"%(cv.countNonZero(GRAYmask),cv.countNonZero(WHITEmask),cv.countNonZero(GRAY_sur_WHITE)))
+                #print("RAY pxs:%d\tRIO pxs:%d\tBLACK pxs:%d"%(cv.countNonZero(RAYmask),cv.countNonZero(RIOmask),cv.countNonZero(BLACKmask)))
+                #print("gray pxs:%d,white pxs:%d,GRAY_and_white:%d"%(cv.countNonZero(GRAYmask),cv.countNonZero(WHITEmask),cv.countNonZero(GRAY_sur_WHITE)))
+                print("ponpoko pxs:%d\tpeanuts pxs:%d"%(cv.countNonZero(PPKmask),cv.countNonZero(PNTmask)))
                 KEY= cv.waitKey(0)
                 if KEY == ord('q'):
                     break               

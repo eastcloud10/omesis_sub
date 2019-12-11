@@ -5,20 +5,20 @@
 import cv2 as cv
 import numpy as np
 import matplotlib.pyplot as plt
-img_name = 'first.bmp'
-previous_img_name = 'second.bmp'
+img_name = 'ppk.bmp'
+#previous_img_name = 'second.bmp'
 img = cv.imread(img_name,cv.IMREAD_UNCHANGED)
-previous_img = cv.imread(previous_img_name,cv.IMREAD_UNCHANGED)
+#previous_img = cv.imread(previous_img_name,cv.IMREAD_UNCHANGED)
 
 hsv = cv.cvtColor(img,cv.COLOR_BGR2HSV)
-previous_hsv = cv.cvtColor(previous_img,cv.COLOR_BGR2HSV)
+#previous_hsv = cv.cvtColor(previous_img,cv.COLOR_BGR2HSV)
 
-signhsv = np.array(hsv,np.int16)
-signprevious_hsv = np.array(previous_hsv,np.int16)
-minus = np.subtract(signhsv,signprevious_hsv)
+#signhsv = np.array(hsv,np.int16)
+#signprevious_hsv = np.array(previous_hsv,np.int16)
+#minus = np.subtract(signhsv,signprevious_hsv)
 
 
-H,S,V = minus.reshape((-1,3)).transpose((1,0))
+H,S,V = hsv.reshape((-1,3)).transpose((1,0))
 intervals=[]
 for i in range(512):
     intervals.append(i-255.5)

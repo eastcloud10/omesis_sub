@@ -9,4 +9,5 @@ def BGR2HSV(*RGB):
         print(cv.cvtColor(np.uint8([[[b,g,r]]]),cv.COLOR_BGR2HSV))
         
 if __name__ == "__main__":
-    BGR2HSV((28,97,131),(19,81,106),(23,91,123),(23,87,111),)
+    BGR2HSV((44,178,54),(255,107,57))
+    input()
