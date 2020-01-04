@@ -1,10 +1,11 @@
+# -*- coding: UTF-8 -*-
 '''
 截取视频，识别结果可视化
 '''
 import numpy as np
 import cv2 as cv
 import os
-from auto_sub import frame_to_time 
+from auto_sub import frame_to_time ,msec_to_timestring
 
 def PPK_mask(hsv):
     lower_ray = np.array([56,178,189])
@@ -75,15 +76,18 @@ def round_kernel_generator(radius):
     
 if __name__ == "__main__": 
     filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
+    select_list =[]
     for filename in filelist:
-        if filename[-4:] == '.mp4':
-            print("已发现：%s"%filename)
-            VIDEO_FILENAME = filename
-            break
+        if os.path.splitext(filename)[1]== '.webm' or os.path.splitext(filename)[1]== '.mp4' :
+            select_list.append(filename)
+
+    if len(select_list)>0:
+        for i in range(len(select_list)):
+            print(f'{i+1}: {select_list[i]}')
+        chosen_one = int(input())-1
+        VIDEO_FILENAME = select_list[chosen_one]
     else:
         VIDEO_FILENAME = input('请输入视频文件名（含扩展名）：\n')
-    if VIDEO_FILENAME[-4:] != '.mp4':
-        VIDEO_FILENAME = VIDEO_FILENAME+'.mp4'
     cap = cv.VideoCapture(VIDEO_FILENAME,cv.CAP_FFMPEG)
     FPS = cap.get(cv.CAP_PROP_FPS)
     frame_count = -1
@@ -99,26 +103,27 @@ if __name__ == "__main__":
         frame_count += 1
         print(frame_count)      
         hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-        if frame_count%30 == 29:            
+        if frame_count>=0:            
             small_img=cv.resize(img,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA)
             #GRAYmask=GRAY_mask(previous_hsv, hsv)
-            #RAYmask=RAY_mask(hsv)
-            #RIOmask=RIO_mask(hsv)
+            RAYmask=RAY_mask(hsv)
+            RIOmask=RIO_mask(hsv)
+            current_frame_msec = cap.get(cv.CAP_PROP_POS_MSEC)
             #BLACKmask=BLACK_mask(hsv)
             #WHITEmask=WHITE_mask(hsv)
-            PPKmask=PPK_mask(hsv)
-            PNTmask=PNT_mask(hsv)
+            #PPKmask=PPK_mask(hsv)
+            #PNTmask=PNT_mask(hsv)
             #BLACKclosemask = cv.bitwise_xor(BLACKmask, cv.morphologyEx(BLACKmask, cv.MORPH_CLOSE, round_kernel))
             #BLACK_sur_WHITE = cv.bitwise_and(BLACKclosemask,WHITEmask)                
-            if cv.countNonZero(PPKmask) + cv.countNonZero(PNTmask) > 5000:
+            if current_frame_msec>32200:
                 #GRAYclosemask = cv.morphologyEx(GRAYmask, cv.MORPH_CLOSE, round_kernel)
                 #GRAY_sur_WHITE = cv.bitwise_and(GRAYclosemask,WHITEmask)  
-                cv.imshow('frame', small_img)
-                cv.imshow('ponpoko', cv.resize(PPKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
-                cv.imshow('peanuts', cv.resize(PNTmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                cv.imshow(f'frame{VIDEO_FILENAME}', small_img)
+                #cv.imshow('ponpoko', cv.resize(PPKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
+                #cv.imshow('peanuts', cv.resize(PNTmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 #cv.imshow('gray', cv.resize(GRAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                #cv.imshow('ray', cv.resize(RAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
-                #cv.imshow('rio', cv.resize(RIOmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                cv.imshow(f'ray{VIDEO_FILENAME}', cv.resize(RAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
+                cv.imshow(f'rio{VIDEO_FILENAME}', cv.resize(RIOmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 #cv.imshow('black',cv.resize(BLACKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 #cv.imshow('white',cv.resize(WHITEmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 #cv.imshow('BLACK_close_40',cv.resize(BLACKclosemask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
@@ -126,14 +131,16 @@ if __name__ == "__main__":
                 #cv.imshow('GRAY_close_40',cv.resize(GRAYclosemask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 #cv.imshow("GRAY close and white",cv.resize(GRAY_sur_WHITE,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 print("Frame count:%d"%frame_count)
+                print(f"Current time:{msec_to_timestring(current_frame_msec)}")
                 #print("RAY pxs:%d\tRIO pxs:%d\tBLACK pxs:%d"%(cv.countNonZero(RAYmask),cv.countNonZero(RIOmask),cv.countNonZero(BLACKmask)))
                 #print("gray pxs:%d,white pxs:%d,GRAY_and_white:%d"%(cv.countNonZero(GRAYmask),cv.countNonZero(WHITEmask),cv.countNonZero(GRAY_sur_WHITE)))
-                print("ponpoko pxs:%d\tpeanuts pxs:%d"%(cv.countNonZero(PPKmask),cv.countNonZero(PNTmask)))
+                #print("ponpoko pxs:%d\tpeanuts pxs:%d"%(cv.countNonZero(PPKmask),cv.countNonZero(PNTmask)))
                 KEY= cv.waitKey(0)
                 if KEY == ord('q'):
                     break               
                 elif KEY == ord('c'):
-                    cv.imwrite("%s.bmp"%str(frame_count),img)
+                    cv.imwrite(f"{VIDEO_FILENAME}{str(frame_count)}.bmp",img)
+                cv.destroyAllWindows() 
         previous_hsv = hsv
             
     cap.release()

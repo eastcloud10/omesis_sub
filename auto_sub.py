@@ -8,6 +8,24 @@ import os
 from dataclasses import dataclass, field
 from typing import List
 DEBUG = False
+
+def find_type_file(*exts):
+    filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
+    select_list =[]
+    for filename in filelist:
+        for ext in exts:
+            if os.path.splitext(filename)[1]== ext:
+                select_list.append(filename)
+
+    if len(select_list)>0:
+        for i in range(len(select_list)):
+            print(f'{i+1}: {select_list[i]}')
+        chosen_one = int(input())-1
+        return_FILENAME = select_list[chosen_one]
+    else:
+        return_FILENAME = input('请输入文件名（含扩展名）：\n')
+    return return_FILENAME
+
 if DEBUG:
     os.name = 'DEBUG'
 def round_kernel_generator(radius):
@@ -27,17 +45,19 @@ class TIME_it():
     def tick(self):
         return time.time() - self.starttime
 
-@dataclass
-class frame_and_position:
-    hsv: np.array
-    frame_count: int
     
+@dataclass
+class frame_and_msec:
+    hsv: np.array
+    frame_msec: int
 
 @dataclass
 class frameinfo:
-    frame_count: int
+    frame_msec: int
     start_mask: np.array
     start_mask_count: int
+    
+    
 
 @dataclass
 class ACTOR:
@@ -69,10 +89,9 @@ class ACTOR:
 
     def dis_compare(self,frame_list, criteria=0,position=0):
         if len(frame_list) == 1:
-            startframecount = self.startframelist[position].frame_count
-            if frame_list[0].frame_count - startframecount >= 30:
-                self.sub_count += 1
-                writetimestamp(FPS,startframecount,frame_list[0].frame_count,self.fontname,self.defaulttext+str(self.sub_count))
+            startframemsec = self.startframelist[position].frame_msec
+            self.sub_count += 1
+            writetimestamp(FPS,startframemsec,frame_list[0].frame_msec,self.fontname,self.defaulttext+str(self.sub_count))
             self.startframelist.pop(position)
             return
         mid_frame = frame_list[(len(frame_list)-1)//2].hsv
@@ -86,11 +105,8 @@ class ACTOR:
                 
     def app_compare(self,frame_list, criteria=0):
         if len(frame_list) == 1:
-            if len(self.startframelist)>0:
-                if frame_list[0].frame_count - self.startframelist[-1].frame_count < 60:
-                    return
             confirmed_mask = get_mask(self.type,frame_list[0].hsv,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
-            self.startframelist.append(frameinfo(frame_count = frame_list[0].frame_count, \
+            self.startframelist.append(frameinfo(frame_msec = frame_list[0].frame_msec, \
                                         start_mask = confirmed_mask, \
                                         start_mask_count = cv.countNonZero(confirmed_mask)))
             return
@@ -124,9 +140,9 @@ class ACTOR:
         self.mask_alpha_sum = mask_omega_sum
         return
     
-    def allend(self,frame_count): #收尾可能没结束的字幕
+    def allend(self,frame_msec): #收尾可能没结束的字幕
         for st,start_mask,start_mask_count in self.startframelist:
-            writetimestamp(FPS,st,frame_count,self.fontname,self.defaulttext)
+            writetimestamp(FPS,st,frame_msec,self.fontname,self.defaulttext)
         
 #根据范围取mask
 def get_mask(type,hsvimg,lowerhsv,upperhsv,kernel,bordlowhsv=1,borduphsv=1,previous_hsvimg=1): #在HSV颜色空间判断字幕像素点
@@ -213,20 +229,30 @@ Comment: 1,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\\pos($sx
         f.write(u'\ufeff') #防Aegisub乱码
         f.write(ASS_BASE)
         
+def msec_to_timestring(msec):
+    intmsec = int(msec-0.1)
+    hour = intmsec//1000//60//60
+    minute = (intmsec//1000//60)%60
+    second = (intmsec//1000)%60
+    msecstring = intmsec%1000//10
+    timestring = f'{hour}:{minute}:{second}.{msecstring}'
+    return timestring
+    
+
 #向ass中写入时间轴数据
-def writetimestamp(FPS,startframe,endframe,fontname,defaulttext):
+def writetimestamp(FPS,startfmsec,endfmsec,fontname,defaulttext):
     with open(ASS_FILENAME,'a',encoding="utf-8") as f:
-        f.write("\nDialogue: 0,%s,%s,%s,,0,0,0,,%s"%(frame_to_time(startframe),frame_to_time(endframe),fontname,defaulttext))
+        f.write("\nDialogue: 0,%s,%s,%s,,0,0,0,,%s"%(msec_to_timestring(startfmsec),msec_to_timestring(endfmsec),fontname,defaulttext))
 
 #进度条显示        
-def progress_bar(frame_count):
+def progress_bar(frame_count,frame_msec):
     totaltime = clock.tick()
     if os.name == 'nt':
         os.system("cls")
         ctypes.windll.kernel32.SetConsoleTitleW("(%d%%)%s"%(100*frame_count/TOTAL_FRAMES,VIDEO_FILENAME))
     print('进度：%d%%'%(100*frame_count/TOTAL_FRAMES))
     print("已处理帧数： %d"%frame_count)
-    print("已处理至：%s"%(frame_to_time(frame_count)))
+    print("已处理至：%s"%(msec_to_timestring(frame_msec)))
     print("已用时间 %d秒"%totaltime)
     print("每秒视频处理用时 %.2f秒"%(FPS*totaltime/frame_count))
     time_left = (TOTAL_FRAMES - frame_count)*totaltime/frame_count
@@ -236,21 +262,21 @@ def progress_bar(frame_count):
 @dataclass
 class GRAY_ACTOR:
     startframelist: List[frameinfo] = field(default_factory=list)
-    lower_h: np.array = np.array([-10,-25,-143])
-    upper_h: np.array = np.array([10,7,-49])
+    lower_h: np.array = np.array([0,0,-156])
+    upper_h: np.array = np.array([0,0,-63])
     white_lower_h: np.array = np.array([0,0,252])
-    white_upper_h: np.array = np.array([255,6,255])
+    white_upper_h: np.array = np.array([0,6,255])
     kernel: np.array = np.ones((5,5),np.uint8)
     sub_count: int = 0
 
-    def GRAY_check(self,hsv,previous_hsv,fc):        
+    def GRAY_check(self,hsv,previous_hsv,current_frame_msec):        
         if len(self.startframelist)>0:
             for i in list(range(len(self.startframelist)))[::-1]:
                 content_mask = cv.morphologyEx(cv.inRange(hsv,self.white_lower_h,self.white_upper_h), cv.MORPH_CLOSE, self.kernel)
-                if cv.countNonZero(cv.bitwise_and(self.startframelist[i].start_mask, content_mask)) < (self.startframelist[i].start_mask_count//2):
-                    st = self.startframelist[i].frame_count
+                if cv.countNonZero(cv.bitwise_and(self.startframelist[i].start_mask, content_mask)) < (self.startframelist[i].start_mask_count//5):
+                    st = self.startframelist[i].frame_msec
                     self.sub_count += 1
-                    writetimestamp(FPS,st,fc,'边缘模糊注释',"【模糊%d】"%self.sub_count)
+                    writetimestamp(FPS,st,current_frame_msec,'边缘模糊注释',"【模糊%d】"%self.sub_count)
                     self.startframelist.pop(i)  
         signhsv = np.array(hsv,np.int16)
         signprevious_hsv = np.array(previous_hsv,np.int16)
@@ -265,7 +291,7 @@ class GRAY_ACTOR:
         confirmed_mask = cv.bitwise_and(content_mask,bord_close)
         confirmed_count = cv.countNonZero(confirmed_mask)
         if confirmed_count>20000:
-            self.startframelist.append(frameinfo(frame_count = fc,start_mask = confirmed_mask,start_mask_count = confirmed_count))
+            self.startframelist.append(frameinfo(frame_msec = current_frame_msec,start_mask = confirmed_mask,start_mask_count = confirmed_count))
         return
     def GRAY_END(self):
         for st,start_mask,start_mask_count in self.startframelist:
@@ -279,15 +305,24 @@ if __name__ == "__main__":
         os.system("cls")
         ctypes.windll.kernel32.SetConsoleTitleW("omesis字幕轴自动生成")
     global VIDEO_FILENAME,ASS_FILENAME
+       
+    VIDEO_FILENAME = find_type_file(u'.webm', u'.mp4')
+    """
     filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
+    select_list =[]
     for filename in filelist:
-        if filename[-4:] == '.mp4':
-            print("已发现：%s"%filename)
-            VIDEO_FILENAME = filename
-            break
-    else:
-        VIDEO_FILENAME = input('请输入视频文件名（含扩展名）：\n') 
+        if os.path.splitext(filename)[1]== '.webm' or os.path.splitext(filename)[1]== '.mp4' :
+            select_list.append(filename)
 
+    if len(select_list)>0:
+        for i in range(len(select_list)):
+            print(f'{i+1}: {select_list[i]}')
+        chosen_one = int(input())-1
+        VIDEO_FILENAME = select_list[chosen_one]
+    else:
+        VIDEO_FILENAME = input('请输入视频文件名（含扩展名）：\n')
+    """
+    
     #载入视频
     cap = cv.VideoCapture(VIDEO_FILENAME,cv.CAP_FFMPEG) #打开视频
     print('成功读取视频')
@@ -298,12 +333,13 @@ if __name__ == "__main__":
     WIDTH = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
     HEIGHT = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))  
     ALLZEROS = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
+    
 
-    ASS_FILENAME = "【自动生成】"+VIDEO_FILENAME[:-4]+'.ass'
+    ASS_FILENAME = "【自动生成】"+VIDEO_FILENAME[:-5]+'.ass'
     initial_ass()
     
     #样式列表，可按需添加
-    RAY = ACTOR(name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([173,163,219]),uph=np.array([178,173,230]), \
+    RAY = ACTOR(name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([172,160,218]),uph=np.array([179,173,230]), \
                 kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
     RIO = ACTOR(name='rio',fontname='rio字幕',defaulttext='【rio说：】',lowh=np.array([102,189,211]),uph=np.array([107,199,222]), \
                 kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
@@ -312,29 +348,29 @@ if __name__ == "__main__":
                 bordlowh=np.array([0,0,0]),borduph=np.array([255,255,43]))
     GRAY = GRAY_ACTOR()
     
-    PONPOKO = ACTOR(name='ponpoko',fontname='ponpoko字幕',defaulttext='【ponpoko说：】',lowh=np.array([56,178,189]),uph=np.array([67,193,207]), \
-                kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
-    PEANUTS = ACTOR(name='peanuts',fontname='peanuts字幕',defaulttext='【peanuts说：】',lowh=np.array([4,188,233]),uph=np.array([12,196,248]), \
-                kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
+    #PONPOKO = ACTOR(name='ponpoko',fontname='ponpoko字幕',defaulttext='【ponpoko说：】',lowh=np.array([56,178,189]),uph=np.array([67,193,207]), \
+    #            kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
+    #PEANUTS = ACTOR(name='peanuts',fontname='peanuts字幕',defaulttext='【peanuts说：】',lowh=np.array([4,188,233]),uph=np.array([12,196,248]), \
+    #            kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
     #进度条
     global frame_count
     print("----------")
     frame_count = -1
     period_frames = []
     clock = TIME_it()
-    
     alpha_frame_count = -1
     previoushsv = np.zeros((HEIGHT,WIDTH,3),dtype=np.uint8)
     while(cap.isOpened()):
         ret, img = cap.read()
         if ret is False:#没有帧了    
             break
+        current_frame_msec = cap.get(cv.CAP_PROP_POS_MSEC)
         frame_count += 1 #成功读帧，帧数+1
         hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
         
         #GRAY
-        period_frames.append(frame_and_position(hsv=hsv,frame_count=frame_count))
-        GRAY.GRAY_check(hsv,previoushsv,frame_count)
+        period_frames.append(frame_and_msec(hsv=hsv,frame_msec=current_frame_msec))
+        GRAY.GRAY_check(hsv,previoushsv,current_frame_msec)
         previoushsv = hsv
         
         if frame_count%SERIES_LENGTH == SERIES_LENGTH-1:
@@ -344,11 +380,11 @@ if __name__ == "__main__":
             period_frames = []
             print('|',end='',flush=True)
             if frame_count%(10*SERIES_LENGTH) == SERIES_LENGTH-1:
-                progress_bar(frame_count)
+                progress_bar(frame_count,current_frame_msec)
         
     #收尾可能没结束的字幕
     for actor in ACTOR.actor_list:
-        actor.allend(frame_count)
+        actor.allend(current_frame_msec)
     GRAY.GRAY_END()
         
     #释放资源
