@@ -1,24 +1,25 @@
 import pysubs2
 import os
+import re
+from auto_sub import find_type_file
 
-filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
-for filename in filelist:
-    if filename[-4:] == '.ass' and filename [:6] != "【自动生成】":
-        print("已发现：%s"%filename)
-        ASS_FILENAME = filename
-        break
-else:
-    VIDEO_FILENAME = input('请输入视频文件名（含扩展名）：\n') 
-
-count = 0
+ASS_FILENAME = find_type_file('.ass')
 subs = pysubs2.load(ASS_FILENAME, encoding="utf-8")
 for line in subs:
-    if line.text[:4]=="ray：":
-        line.style = "ray1通常"
-        line.text = line.text[4:]
-    elif line.text[:4]=="rio：":
+    if re.search("^YZ：",line.text):
+        line.style = "ray字幕"
+        line.text = re.search("(?<=：)\S+",line.text).group(0)
+    elif re.search("^OZ：",line.text):
+        line.style = "rio字幕"
+        line.text = re.search("(?<=：)\S+",line.text).group(0)
+    elif re.search("^O：",line.text):
         line.style = "rio1通常"
-        line.text = line.text[4:]
-    line.text = line.text[1:-1]      
+        line.text = re.search("(?<=：)\S+",line.text).group(0)
+    elif re.search("^Y：",line.text):
+        line.style = "ray1通常"
+        line.text = re.search("(?<=：)\S+",line.text).group(0)
+    elif re.search("^Z：",line.text):
+        line.style = "加厚边框注释"
+        line.text = re.search("(?<=：)\S+",line.text).group(0)     
             
 subs.save('ass_'+ASS_FILENAME, encoding="utf-8")

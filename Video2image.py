@@ -115,15 +115,15 @@ if __name__ == "__main__":
             #PNTmask=PNT_mask(hsv)
             #BLACKclosemask = cv.bitwise_xor(BLACKmask, cv.morphologyEx(BLACKmask, cv.MORPH_CLOSE, round_kernel))
             #BLACK_sur_WHITE = cv.bitwise_and(BLACKclosemask,WHITEmask)                
-            if current_frame_msec>32200:
+            if frame_count == 479 or frame_count == 770:
                 #GRAYclosemask = cv.morphologyEx(GRAYmask, cv.MORPH_CLOSE, round_kernel)
                 #GRAY_sur_WHITE = cv.bitwise_and(GRAYclosemask,WHITEmask)  
                 cv.imshow(f'frame{VIDEO_FILENAME}', small_img)
                 #cv.imshow('ponpoko', cv.resize(PPKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
                 #cv.imshow('peanuts', cv.resize(PNTmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 #cv.imshow('gray', cv.resize(GRAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
-                cv.imshow(f'ray{VIDEO_FILENAME}', cv.resize(RAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
-                cv.imshow(f'rio{VIDEO_FILENAME}', cv.resize(RIOmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
+                #cv.imshow(f'ray{VIDEO_FILENAME}', cv.resize(RAYmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))            
+                #cv.imshow(f'rio{VIDEO_FILENAME}', cv.resize(RIOmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 #cv.imshow('black',cv.resize(BLACKmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 #cv.imshow('white',cv.resize(WHITEmask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))
                 #cv.imshow('BLACK_close_40',cv.resize(BLACKclosemask,None,fx=0.5,fy=0.5,interpolation=cv.INTER_AREA))

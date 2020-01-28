@@ -132,10 +132,17 @@ class ACTOR:
                     self.dis_compare(frame_list,criteria,i)
             
         mask_new = cv.bitwise_and(mask_omega,cv.bitwise_not(self.mask_alpha))
-        mask_new_sum = cv.countNonZero(mask_new)            
+        mask_new_sum = cv.countNonZero(mask_new)
+        flag = True
         if (mask_new_sum>self.start_amount):
-            criteria = int(mask_new_sum//2)
-            self.app_compare(frame_list,criteria)
+            for newline in self.startframelist:
+                duplication = cv.bitwise_and(newline.start_mask, mask_new)
+                if 5*cv.countNonZero(duplication) > mask_new_sum:
+                    flag = False
+                    break
+            if flag:
+                criteria = int(mask_new_sum//2)
+                self.app_compare(frame_list,criteria)
         self.mask_alpha = mask_omega 
         self.mask_alpha_sum = mask_omega_sum
         return
@@ -235,7 +242,7 @@ def msec_to_timestring(msec):
     minute = (intmsec//1000//60)%60
     second = (intmsec//1000)%60
     msecstring = intmsec%1000//10
-    timestring = f'{hour}:{minute}:{second}.{msecstring}'
+    timestring = f'{hour}:{minute}:{second}.'+'{:02d}'.format(msecstring)
     return timestring
     
 
@@ -273,7 +280,7 @@ class GRAY_ACTOR:
         if len(self.startframelist)>0:
             for i in list(range(len(self.startframelist)))[::-1]:
                 content_mask = cv.morphologyEx(cv.inRange(hsv,self.white_lower_h,self.white_upper_h), cv.MORPH_CLOSE, self.kernel)
-                if cv.countNonZero(cv.bitwise_and(self.startframelist[i].start_mask, content_mask)) < (self.startframelist[i].start_mask_count//5):
+                if cv.countNonZero(cv.bitwise_and(self.startframelist[i].start_mask, content_mask)) < (self.startframelist[i].start_mask_count*0.8):
                     st = self.startframelist[i].frame_msec
                     self.sub_count += 1
                     writetimestamp(FPS,st,current_frame_msec,'边缘模糊注释',"【模糊%d】"%self.sub_count)
@@ -307,21 +314,6 @@ if __name__ == "__main__":
     global VIDEO_FILENAME,ASS_FILENAME
        
     VIDEO_FILENAME = find_type_file(u'.webm', u'.mp4')
-    """
-    filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
-    select_list =[]
-    for filename in filelist:
-        if os.path.splitext(filename)[1]== '.webm' or os.path.splitext(filename)[1]== '.mp4' :
-            select_list.append(filename)
-
-    if len(select_list)>0:
-        for i in range(len(select_list)):
-            print(f'{i+1}: {select_list[i]}')
-        chosen_one = int(input())-1
-        VIDEO_FILENAME = select_list[chosen_one]
-    else:
-        VIDEO_FILENAME = input('请输入视频文件名（含扩展名）：\n')
-    """
     
     #载入视频
     cap = cv.VideoCapture(VIDEO_FILENAME,cv.CAP_FFMPEG) #打开视频
@@ -343,7 +335,7 @@ if __name__ == "__main__":
                 kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
     RIO = ACTOR(name='rio',fontname='rio字幕',defaulttext='【rio说：】',lowh=np.array([102,189,211]),uph=np.array([107,199,222]), \
                 kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
-    BLACK =ACTOR(name='BLACK',fontname='加厚边框注释',defaulttext=r'{\bord8}【黑边框文字】',lowh=np.array([0,0,252]),uph=np.array([255,6,255]), \
+    BLACK =ACTOR(name='BLACK',fontname='加厚边框注释',defaulttext=r'【黑边框文字】',lowh=np.array([0,0,252]),uph=np.array([255,6,255]), \
                 kernelsize=5,start_amount=20000,end_ratio = 0.5, type=ACTOR.BORD,\
                 bordlowh=np.array([0,0,0]),borduph=np.array([255,255,43]))
     GRAY = GRAY_ACTOR()
