@@ -1,4 +1,4 @@
-功能：识别画面中出现的字幕 (红RAY、蓝RIO、黑色边框、边缘模糊文字) 并打轴
+功能：识别画面中出现的字幕 (红RAY、蓝RIO、黑色边框) 并打轴
 
 1.运行需求：python3.7, opencv库，numpy 库，ffmpeg解码器
 2.下载 auto_sub.py
@@ -9,5 +9,3 @@
 注2：【边缘模糊文字】识别率较低，需要手动调整
 
 参考了cherry的“红蓝色字幕空轴生成.m”的思路，特此感谢
-
-链接: https://pan.baidu.com/s/1ubVd_jKLjRxTzqGkCaJfZA 提取码: 2je7 复制这段内容后打开百度网盘手机App，操作更方便哦

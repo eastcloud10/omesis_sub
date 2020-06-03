@@ -5,7 +5,7 @@
 import cv2 as cv
 import numpy as np
 import matplotlib.pyplot as plt
-img_name = 'purewhite.bmp'
+img_name = 'bat.png'
 #previous_img_name = 'white.bmp'
 img = cv.imread(img_name,cv.IMREAD_UNCHANGED)
 #previous_img = cv.imread(previous_img_name,cv.IMREAD_UNCHANGED)

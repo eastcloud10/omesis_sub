@@ -5,9 +5,19 @@ import cv2 as cv
 import time
 import ctypes
 import os
+import configparser
+import sys
+from string import Template
 from dataclasses import dataclass, field
 from typing import List
 DEBUG = False
+SCALE = 20
+
+def myexcepthook(type, value, traceback, oldhook=sys.excepthook):
+    oldhook(type, value, traceback)
+    input("请把以上错误信息截图反馈... ")    # use input() in Python 3.x
+
+sys.excepthook = myexcepthook
 
 def find_type_file(*exts):
     filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
@@ -17,26 +27,16 @@ def find_type_file(*exts):
             if os.path.splitext(filename)[1]== ext:
                 select_list.append(filename)
 
-    if len(select_list)>0:
+    if len(select_list) == 1:
+        return_FILENAME = select_list[0]
+    elif len(select_list)>1:
         for i in range(len(select_list)):
             print(f'{i+1}: {select_list[i]}')
-        chosen_one = int(input())-1
+        chosen_one = int(input("请输入想识别的文件序号，然后回车："))-1
         return_FILENAME = select_list[chosen_one]
     else:
         return_FILENAME = input('请输入文件名（含扩展名）：\n')
     return return_FILENAME
-
-if DEBUG:
-    os.name = 'DEBUG'
-def round_kernel_generator(radius):
-    ret = np.ones((2*radius+1,2*radius+1),np.uint8)
-    for x in range(2*radius+1):
-        for y in range(2*radius+1):
-            if (x-radius)**2 + (y-radius)**2 > radius**2:
-                ret[x,y] = 0
-    return ret
-ROUND_KERNEL = np.ones((89,89),np.uint8)
-BIG_KERNEL = round_kernel_generator(100)
 
 class TIME_it():
     def __init__(self):
@@ -78,7 +78,7 @@ class ACTOR:
     bordlowh: np.array=np.array([0,0,0])
     borduph: np.array=np.array([180,255,255])
     startframelist: List[frameinfo] = field(default_factory=list)
-
+    BORD_EXAM: np.array=np.ones((89,89),np.uint8)
     
     def __post_init__(self):
         self.kernel = np.ones((self.kernelsize,self.kernelsize),np.uint8)
@@ -87,31 +87,35 @@ class ACTOR:
         self.sub_count = 0
         ACTOR.actor_list.append(self)        
 
-    def dis_compare(self,frame_list, criteria=0,position=0):
+    def dis_compare(self,frame_list, criteria=0,position=0,repeat=False):
         if len(frame_list) == 1:
             startframemsec = self.startframelist[position].frame_msec
             self.sub_count += 1
-            writetimestamp(FPS,startframemsec,frame_list[0].frame_msec,self.fontname,self.defaulttext+str(self.sub_count))
+            writetimestamp(FPS,startframemsec,frame_list[0].frame_msec,self.fontname,self.defaulttext+str(self.sub_count),repeat)
             self.startframelist.pop(position)
             return
         mid_frame = frame_list[(len(frame_list)-1)//2].hsv
-        mask_mid = get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
+        mask_mid = self.get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
         mask_dis = cv.bitwise_and(self.startframelist[position].start_mask,cv.bitwise_not(mask_mid))
         mask_dis_sum = cv.countNonZero(mask_dis)
         if mask_dis_sum > criteria:
-            self.dis_compare(frame_list[:(len(frame_list)+1)//2],criteria,position)
+            self.dis_compare(frame_list[:(len(frame_list)+1)//2],criteria,position,repeat)
         else:
-            self.dis_compare(frame_list[(len(frame_list)+1)//2:],criteria,position)
+            self.dis_compare(frame_list[(len(frame_list)+1)//2:],criteria,position,repeat)
                 
     def app_compare(self,frame_list, criteria=0):
         if len(frame_list) == 1:
-            confirmed_mask = get_mask(self.type,frame_list[0].hsv,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
-            self.startframelist.append(frameinfo(frame_msec = frame_list[0].frame_msec, \
+            for newline in self.startframelist:
+                time_interval =  frame_list[0].frame_msec - newline.frame_msec
+                if time_interval < MINIMUM_INTERVAL:
+                    return
+            confirmed_mask = self.get_mask(self.type,frame_list[0].hsv,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
+            self.startframelist.insert(0,frameinfo(frame_msec = frame_list[0].frame_msec, \
                                         start_mask = confirmed_mask, \
                                         start_mask_count = cv.countNonZero(confirmed_mask)))
             return
         mid_frame = frame_list[(len(frame_list)-1)//2].hsv
-        mask_mid = get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
+        mask_mid = self.get_mask(self.type,mid_frame,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)
         mask_new = cv.bitwise_and(mask_mid,cv.bitwise_not(self.mask_alpha))
         mask_new_sum = cv.countNonZero(mask_new)
         if mask_new_sum > criteria:
@@ -120,53 +124,44 @@ class ACTOR:
             self.app_compare(frame_list[(len(frame_list)+1)//2:],criteria)
     
     def rough_compare(self,frame_list): #每隔16帧进行一次比对
-        mask_omega = get_mask(self.type,frame_list[-1].hsv,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)          
+        mask_omega = self.get_mask(self.type,frame_list[-1].hsv,self.lowh,self.uph,self.kernel,self.bordlowh,self.borduph)          
         mask_omega_sum = cv.countNonZero(mask_omega)
         
         if len(self.startframelist)>0:
+            repeat_flag = False
             for i in list(range(len(self.startframelist)))[::-1]:
                 mask_dis = cv.bitwise_and(self.startframelist[i].start_mask,cv.bitwise_not(mask_omega))  
                 mask_dis_sum = cv.countNonZero(mask_dis)
                 criteria = int(self.startframelist[i].start_mask_count*self.end_ratio)
                 if (mask_dis_sum>criteria):
-                    self.dis_compare(frame_list,criteria,i)
+                    self.dis_compare(frame_list,criteria,i,repeat_flag)
+                    repeat_flag = True
             
         mask_new = cv.bitwise_and(mask_omega,cv.bitwise_not(self.mask_alpha))
         mask_new_sum = cv.countNonZero(mask_new)
-        flag = True
         if (mask_new_sum>self.start_amount):
-            for newline in self.startframelist:
-                duplication = cv.bitwise_and(newline.start_mask, mask_new)
-                if 5*cv.countNonZero(duplication) > mask_new_sum:
-                    flag = False
-                    break
-            if flag:
-                criteria = int(mask_new_sum//2)
-                self.app_compare(frame_list,criteria)
+            criteria = int(mask_new_sum//2)
+            self.app_compare(frame_list,criteria)
         self.mask_alpha = mask_omega 
         self.mask_alpha_sum = mask_omega_sum
         return
     
     def allend(self,frame_msec): #收尾可能没结束的字幕
-        for st,start_mask,start_mask_count in self.startframelist:
-            writetimestamp(FPS,st,frame_msec,self.fontname,self.defaulttext)
+        for item in self.startframelist:
+            writetimestamp(FPS,item.frame_msec,frame_msec,self.fontname,self.defaulttext,False)
         
 #根据范围取mask
-def get_mask(type,hsvimg,lowerhsv,upperhsv,kernel,bordlowhsv=1,borduphsv=1,previous_hsvimg=1): #在HSV颜色空间判断字幕像素点
-    if type == ACTOR.CONTENT_ONLY:
-        got_mask = cv.inRange(hsvimg,lowerhsv,upperhsv)
-        temp = cv.morphologyEx(got_mask, cv.MORPH_OPEN, kernel) #OPEN操作，消除噪点
-        if cv.countNonZero(got_mask)<8000:
-            return ALLZEROS
-        res = cv.morphologyEx(temp, cv.MORPH_CLOSE, ROUND_KERNEL) #补洞
-        return got_mask
-    if type == ACTOR.BORD:
-        bord_mask = cv.morphologyEx(cv.inRange(hsvimg,bordlowhsv,borduphsv), cv.MORPH_OPEN, kernel)
-        content_mask = cv.morphologyEx(cv.inRange(hsvimg,lowerhsv,upperhsv), cv.MORPH_CLOSE, kernel) 
-        bord_close = cv.morphologyEx(bord_mask, cv.MORPH_BLACKHAT, ROUND_KERNEL)
-        confirmed_mask = cv.bitwise_and(content_mask,bord_close)
-        return confirmed_mask
-    
+    def get_mask(self, type,hsvimg,lowerhsv,upperhsv,kernel,bordlowhsv=1,borduphsv=1,previous_hsvimg=1): #在HSV颜色空间判断字幕像素点
+        if type == ACTOR.CONTENT_ONLY:
+            got_mask = cv.inRange(hsvimg,lowerhsv,upperhsv)
+            return got_mask
+        if type == ACTOR.BORD:
+            bord_mask = cv.morphologyEx(cv.inRange(hsvimg,bordlowhsv,borduphsv), cv.MORPH_OPEN, kernel)
+            content_mask = cv.morphologyEx(cv.inRange(hsvimg,lowerhsv,upperhsv), cv.MORPH_CLOSE, kernel) 
+            bord_close = cv.morphologyEx(bord_mask, cv.MORPH_BLACKHAT, self.BORD_EXAM)
+            confirmed_mask = cv.bitwise_and(content_mask,bord_close)
+            return confirmed_mask
+"""    
 #从帧数计算（该帧向前取整）的时间，返回的是字符串，第一帧为00:00.00
 def frame_to_time(fc): #由于浮点数误差，对60帧和59.94帧特化
     hour,minute,second,centisecond = 0,0,0,0
@@ -186,56 +181,23 @@ def frame_to_time(fc): #由于浮点数误差，对60帧和59.94帧特化
         second =  int((fc/FPS)%60)
         centisecond = str(fc/FPS%1)[2:4]
     return ("%d:%02d:%02d.%02d"%(hour,minute,second,centisecond))
-
+"""
 #初始化空ass文件
 def initial_ass():    
-    ASS_BASE="""[Script Info]
-; Script generated by Aegisub 3.2.2
-; http://www.aegisub.org/
-Title: New subtitles
-ScriptType: v4.00+
-WrapStyle: 0
-PlayResX: 1920
-PlayResY: 1080
-ScaledBorderAndShadow: yes
-YCbCr Matrix: TV.601
-[Aegisub Project Garbage]
-Last Style Storage: Default
-Audio File: %s
-Video File: %s
-Video AR Mode: 4
-Video AR Value: 1.777778
-Video Zoom Percent: 0.375000
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,45,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,4.5,4.5,2,30,30,23,1
-Style: ray字幕,Microsoft YaHei UI,100,&H005F4EE3,&HFF0000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,2,10,10,220,1
-Style: rio字幕,Microsoft YaHei UI,100,&H00D98936,&H000000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,6,0,2,10,10,220,1
-Style: 薄边框注释,Microsoft YaHei UI,60,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,0,2,10,10,10,1
-Style: 双色,Microsoft YaHei UI,100,&H005F4EE3,&H000000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,8,0,2,10,10,360,1
-Style: 边缘模糊注释,宋体,80,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1
-Style: ray1通常,Microsoft YaHei UI,80,&H005F4EE3,&HFF0000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,10,10,10,1
-Style: rio1通常,Microsoft YaHei UI,80,&H00D98936,&HFF0000FF,&H00FFFFFF,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,10,10,10,1
-Style: 加厚边框注释,Microsoft YaHei UI,120,&H00FFFFFF,&H000000FF,&H00202020,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,10,10,10,1
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Comment: 2,0:00:00.00,0:00:00.01,ray字幕,,0,0,0,template line keeptags,
-Comment: 1,0:00:00.00,0:00:00.01,ray字幕,,0,0,0,template line keeptags,{\\bord9\\3c&H5F4EE3&}
-Comment: 2,0:00:00.00,0:00:00.01,ray1通常,,0,0,0,template line keeptags,
-Comment: 1,0:00:00.00,0:00:00.01,ray1通常,,0,0,0,template line keeptags,{\\bord7\\3c&H5F4EE3&}
-Comment: 2,0:00:00.00,0:00:00.01,rio字幕,,0,0,0,template line keeptags,
-Comment: 1,0:00:00.00,0:00:00.01,rio字幕,,0,0,0,template line keeptags,{\\bord9\\3c&HD98936&}
-Comment: 2,0:00:00.00,0:00:00.01,rio1通常,,0,0,0,template line keeptags,
-Comment: 1,0:00:00.00,0:00:00.01,rio1通常,,0,0,0,template line keeptags,{\\bord7\\3c&HD98936&}
-Comment: 2,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\\pos($sx,$sy)\\clip(!$lleft-20!,!$ltop-20!,!$lright+20!,$lmiddle)}
-Comment: 1,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\\pos($sx,$sy)\\bord12\\3c&H5F4EE3&\\clip(!$lleft-20!,!$ltop-20!,!$lright+20!,$lmiddle)}
-Comment: 2,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\\pos($sx,$sy)\\1c&HD98936&\\clip(!$lleft-20!,$lmiddle,!$lright+20!,!$lbottom+20!)}
-Comment: 1,0:00:00.00,0:00:00.01,双色,,0,0,0,template line keeptags,{\\pos($sx,$sy)\\bord12\\3c&HD98936&\\1c&HD98936&\\clip(!$lleft-20!,$lmiddle,!$lright+20!,!$lbottom+20!)}
-"""%(VIDEO_FILENAME,VIDEO_FILENAME)
-    with open(ASS_FILENAME,"w",encoding='utf-8') as f:
-        f.write(u'\ufeff') #防Aegisub乱码
-        f.write(ASS_BASE)
-        
+    try:
+        with open('C:\\Users\\imago\\Documents\\GitHub\\omesis_sub\\empty.ass','r',encoding='utf-8') as fe:
+            t=Template(fe.read())
+            ASS_BASE = t.substitute(videoname=VIDEO_FILENAME,audioname=VIDEO_FILENAME,)
+    except OSError:
+        input("无法找到empty.ass...")
+        sys.exit()
+    try:
+        with open(ASS_FILENAME,"w",encoding='utf-8') as f:
+            f.write(u'\ufeff') #防Aegisub乱码
+            f.write(ASS_BASE)
+    except OSError:
+        input("无法建立ass字幕文件...")
+        sys.exit()
 def msec_to_timestring(msec):
     intmsec = int(msec-0.1)
     hour = intmsec//1000//60//60
@@ -247,9 +209,13 @@ def msec_to_timestring(msec):
     
 
 #向ass中写入时间轴数据
-def writetimestamp(FPS,startfmsec,endfmsec,fontname,defaulttext):
+def writetimestamp(FPS,startfmsec,endfmsec,fontname,defaulttext,repeat_flag):
+    if repeat_flag:
+        text = "[可能重复]"+defaulttext
+    else:
+        text = defaulttext
     with open(ASS_FILENAME,'a',encoding="utf-8") as f:
-        f.write("\nDialogue: 0,%s,%s,%s,,0,0,0,,%s"%(msec_to_timestring(startfmsec),msec_to_timestring(endfmsec),fontname,defaulttext))
+        f.write("\nDialogue: 0,%s,%s,%s,,0,0,0,,%s"%(msec_to_timestring(startfmsec),msec_to_timestring(endfmsec),fontname,text))
 
 #进度条显示        
 def progress_bar(frame_count,frame_msec):
@@ -265,7 +231,7 @@ def progress_bar(frame_count,frame_msec):
     time_left = (TOTAL_FRAMES - frame_count)*totaltime/frame_count
     print("预计剩余时间：%d分%d秒"%(time_left/60,time_left%60))
     print("--------") #进度条
-    
+"""    
 @dataclass
 class GRAY_ACTOR:
     startframelist: List[frameinfo] = field(default_factory=list)
@@ -300,23 +266,31 @@ class GRAY_ACTOR:
         if confirmed_count>20000:
             self.startframelist.append(frameinfo(frame_msec = current_frame_msec,start_mask = confirmed_mask,start_mask_count = confirmed_count))
         return
-    def GRAY_END(self):
+    def GRAY_END(self,fc):
         for st,start_mask,start_mask_count in self.startframelist:
             writetimestamp(FPS,st,fc,'边缘模糊注释',"【模糊%d】"%self.sub_count)
         return
-
+"""
 if __name__ == "__main__": 
-    #修改终端标题    
-    SERIES_LENGTH = 16 #每隔16帧进行一次对比
+    #修改终端标题
+    
     if os.name == 'nt':
         os.system("cls")
         ctypes.windll.kernel32.SetConsoleTitleW("omesis字幕轴自动生成")
-    global VIDEO_FILENAME,ASS_FILENAME
-       
-    VIDEO_FILENAME = find_type_file(u'.webm', u'.mp4')
-    
+    global VIDEO_FILENAME,ASS_FILENAME,VIDEO_DIRNAME,VIDEO_BASENAME
+
+    if len(sys.argv)>1:
+        VIDEO_FILENAME = sys.argv[1]
+    else:
+        VIDEO_FILENAME = find_type_file(u'.webm', u'.mp4')
+    VIDEO_DIRNAME = os.path.dirname(VIDEO_FILENAME)
+    VIDEO_BASENAME = os.path.basename(VIDEO_FILENAME)
     #载入视频
+    
     cap = cv.VideoCapture(VIDEO_FILENAME,cv.CAP_FFMPEG) #打开视频
+    if not cap.isOpened():
+        input("无法读取视频...")
+        sys.exit()
     print('成功读取视频')
     global FPS,TOTAL_FRAMES,WIDTH,HEIGHT,ALLZEROS
 
@@ -324,26 +298,31 @@ if __name__ == "__main__":
     TOTAL_FRAMES = cap.get(cv.CAP_PROP_FRAME_COUNT)          #总帧数
     WIDTH = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
     HEIGHT = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))  
-    ALLZEROS = np.zeros((HEIGHT,WIDTH),dtype=np.uint8)
-    
+    ALLZEROS = np.zeros((round(HEIGHT/SCALE),round(WIDTH/SCALE)),dtype=np.uint8)
 
-    ASS_FILENAME = "【自动生成】"+VIDEO_FILENAME[:-5]+'.ass'
+    global MINIMUM_INTERVAL
+    settings = configparser.ConfigParser()
+    print('config.ini')
+    settings.read('C:\\Users\\imago\\Documents\\GitHub\\omesis_sub\\config.ini',encoding='utf-8')
+    print(settings['CONFIG'])
+    MINIMUM_INTERVAL = int(settings['CONFIG']['最小间隔'])
+    SERIES_LENGTH = int(settings['CONFIG']['隔帧判定']) #每隔16帧进行一次对比
+    DEBUG = settings.getboolean('CONFIG','DEBUG_MODE')
+
+    
+    ASS_FILENAME =VIDEO_DIRNAME + r"【自动生成】"+VIDEO_BASENAME[:-5]+'.ass'
     initial_ass()
     
     #样式列表，可按需添加
-    RAY = ACTOR(name='ray',fontname='ray字幕',defaulttext='【ray说：】',lowh=np.array([172,160,218]),uph=np.array([179,173,230]), \
-                kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
-    RIO = ACTOR(name='rio',fontname='rio字幕',defaulttext='【rio说：】',lowh=np.array([102,189,211]),uph=np.array([107,199,222]), \
-                kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
-    BLACK =ACTOR(name='BLACK',fontname='加厚边框注释',defaulttext=r'【黑边框文字】',lowh=np.array([0,0,252]),uph=np.array([255,6,255]), \
-                kernelsize=5,start_amount=20000,end_ratio = 0.5, type=ACTOR.BORD,\
-                bordlowh=np.array([0,0,0]),borduph=np.array([255,255,43]))
-    GRAY = GRAY_ACTOR()
-    
-    #PONPOKO = ACTOR(name='ponpoko',fontname='ponpoko字幕',defaulttext='【ponpoko说：】',lowh=np.array([56,178,189]),uph=np.array([67,193,207]), \
-    #            kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
-    #PEANUTS = ACTOR(name='peanuts',fontname='peanuts字幕',defaulttext='【peanuts说：】',lowh=np.array([4,188,233]),uph=np.array([12,196,248]), \
-    #            kernelsize=5,start_amount=2000,end_ratio = 0.5, type=ACTOR.CONTENT_ONLY)
+    config = configparser.ConfigParser()
+    config.read('C:\\Users\\imago\\Documents\\GitHub\\omesis_sub\\actor.ini',encoding='utf-8')
+
+    for style in config.sections():
+        ACTOR(name=config[style]['name'],fontname=config[style]['样式名'],defaulttext=config[style]['默认文字'],lowh=np.array([int(config[style]['low_H']),int(config[style]['low_S']),int(config[style]['low_V'])]),\
+                uph=np.array([int(config[style]['high_H']),int(config[style]['high_S']),int(config[style]['high_V'])]), BORD_EXAM=np.ones((int(config[style]['边框内覆盖']),int(config[style]['边框内覆盖'])),np.uint8), \
+                kernelsize=int(config[style]['降噪等级']),start_amount=int(config[style]['出现判定数']),end_ratio = float(config[style]['结束消失比例']), type=int(config[style]['判定类型']) ,\
+                    bordlowh=np.array([int(config[style]['bord_low_H']),int(config[style]['bord_low_S']),int(config[style]['bord_low_V'])]),borduph=np.array([int(config[style]['bord_high_H']),int(config[style]['bord_high_S']),int(config[style]['bord_high_V'])]))
+
     #进度条
     global frame_count
     print("----------")
@@ -351,19 +330,16 @@ if __name__ == "__main__":
     period_frames = []
     clock = TIME_it()
     alpha_frame_count = -1
-    previoushsv = np.zeros((HEIGHT,WIDTH,3),dtype=np.uint8)
+    previoushsv = np.zeros((round(HEIGHT/SCALE),round(WIDTH/SCALE),3),dtype=np.uint8)
     while(cap.isOpened()):
         ret, img = cap.read()
         if ret is False:#没有帧了    
             break
         current_frame_msec = cap.get(cv.CAP_PROP_POS_MSEC)
         frame_count += 1 #成功读帧，帧数+1
-        hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
-        
-        #GRAY
+        small_img=cv.resize(img,None,fx=1/SCALE,fy=1/SCALE,interpolation=cv.INTER_NEAREST)
+        hsv = cv.cvtColor(small_img, cv.COLOR_BGR2HSV)
         period_frames.append(frame_and_msec(hsv=hsv,frame_msec=current_frame_msec))
-        GRAY.GRAY_check(hsv,previoushsv,current_frame_msec)
-        previoushsv = hsv
         
         if frame_count%SERIES_LENGTH == SERIES_LENGTH-1:
             for actor in ACTOR.actor_list:
@@ -377,7 +353,6 @@ if __name__ == "__main__":
     #收尾可能没结束的字幕
     for actor in ACTOR.actor_list:
         actor.allend(current_frame_msec)
-    GRAY.GRAY_END()
         
     #释放资源
     cap.release()
