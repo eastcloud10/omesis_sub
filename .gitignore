@@ -12,3 +12,16 @@ color_change.py
 Video2image.py
 color_change.py
 desktop.ini
+icon.jpg
+icon.ico
+dist/auto_sub.exe
+build/auto_sub/xref-auto_sub.html
+build/auto_sub/warn-auto_sub.txt
+build/auto_sub/PYZ-00.toc
+build/auto_sub/PYZ-00.pyz
+build/auto_sub/PKG-00.toc
+build/auto_sub/PKG-00.pkg
+build/auto_sub/EXE-00.toc
+build/auto_sub/base_library.zip
+build/auto_sub/auto_sub.exe.manifest
+build/auto_sub/Analysis-00.toc
