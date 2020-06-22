@@ -2,6 +2,8 @@
 '''
 截取视频，识别结果可视化
 '''
+FFMPEG_BIN = "ffmpeg.exe" # on Windows
+import subprocess as sp
 import numpy as np
 import cv2 as cv
 import os
@@ -32,6 +34,7 @@ def RAY_mask(hsv):
         return confirmed_mask  
  
 if __name__ == "__main__": 
+    
     filelist = os.listdir() #在当前文件夹中查找扩展名为.mp4的文件
     select_list =[]
     for filename in filelist:
@@ -45,29 +48,45 @@ if __name__ == "__main__":
         VIDEO_FILENAME = select_list[chosen_one]
     else:
         VIDEO_FILENAME = input('请输入视频文件名（含扩展名）：\n')
-    cap = cv.VideoCapture(VIDEO_FILENAME,cv.CAP_FFMPEG)
-    FPS = cap.get(cv.CAP_PROP_FPS)
+        
+    command = [ FFMPEG_BIN,
+            '-i', VIDEO_FILENAME,
+            '-c:v','h264_cuvid',
+            '-f', 'image2pipe',
+            '-pix_fmt', 'bgr24',
+            '-vcodec', 'rawvideo', '-']
+    pipe = sp.Popen(command, stdout = sp.PIPE, bufsize=10**7)
+    
+    #cap = cv.VideoCapture(VIDEO_FILENAME,cv.CAP_FFMPEG)
+    #FPS = cap.get(cv.CAP_PROP_FPS)
     frame_count = -1
     simple_kernel = np.array([[0,1,0],[1,1,1],[0,1,0]],np.uint8)
     BLACK_new = np.zeros(1920*1080)
-    while(cap.isOpened()):
-        ret, img = cap.read()
-        if not ret:
-            print("Can't receive frame (stream end?). Exiting ...")
+    
+    while(True):
+        #ret, img = cap.read()
+        #if not ret:
+        #    print("Can't receive frame (stream end?). Exiting ...")
+         #   break
+        raw_image = pipe.stdout.read(1920*1080*3)
+        # transform the byte read into a numpy array
+        image =  np.frombuffer(raw_image, dtype='uint8')
+        if image.size == 0:
+            pipe.stdout.flush()
             break
         frame_count += 1
         print(frame_count)      
-      
+        
         if frame_count  % 30 == 0:
-                
-            small_img=cv.resize(img,None,fx=1,fy=1,interpolation=cv.INTER_NEAREST)
-            small_hsv = cv.cvtColor(small_img, cv.COLOR_BGR2HSV)   
-            RAYmask=RAY_mask(small_hsv)
-            current_frame_msec = cap.get(cv.CAP_PROP_POS_MSEC)
+            img = image.reshape((1080,1920,3))
+            small_img=cv.resize(img,None,fx=0.5,fy=0.5,interpolation=cv.INTER_NEAREST)
+            #small_hsv = cv.cvtColor(small_img, cv.COLOR_BGR2HSV)   
+            #RAYmask=RAY_mask(small_hsv)
+            #current_frame_msec = cap.get(cv.CAP_PROP_POS_MSEC)
             cv.imshow(f'frame{VIDEO_FILENAME}', small_img)
             print("Frame count:%d"%frame_count)
-            print(f"Current time:{msec_to_timestring(current_frame_msec)}")
-            print("identified pixels:%d"%(cv.countNonZero(RAYmask)))
+            #print(f"Current time:{msec_to_timestring(current_frame_msec)}")
+            #print("identified pixels:%d"%(cv.countNonZero(RAYmask)))
             KEY= cv.waitKey(0)
             if KEY == ord('q'):
                 break               
@@ -76,6 +95,6 @@ if __name__ == "__main__":
                 cv.imwrite(f"{VIDEO_FILENAME}{str(frame_count)}.bmp",img)
             cv.destroyAllWindows() 
             
-    cap.release()
+    #cap.release()
     cv.destroyAllWindows()        
             
