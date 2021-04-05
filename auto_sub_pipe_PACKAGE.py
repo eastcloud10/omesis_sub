@@ -442,5 +442,5 @@ bord_high_B = 43
     print("\n处理完成")
     if os.name == 'nt':
         ctypes.windll.kernel32.SetConsoleTitleW("(处理完成)%s"%(VIDEO_FILENAME))
-    input('按Enter结束。。。')
+    input(' ')
 
